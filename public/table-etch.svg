@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 900" role="img" aria-label="">
+  <rect width="720" height="900" fill="#14251f"/>
+  <path d="M88 100h544v700H88z" fill="none" stroke="#c8914a" stroke-opacity=".45" stroke-width="2"/>
+  <path d="M130 148h460v604H130z" fill="none" stroke="#f5efe2" stroke-opacity=".14" stroke-width="1"/>
+  <path d="M130 350h460M130 551h460M283 148v604M437 148v604" stroke="#f5efe2" stroke-opacity=".16" stroke-width="1"/>
+  <path d="M178 196l82 82M260 196l-82 82M462 196l82 82M544 196l-82 82" stroke="#f5efe2" stroke-opacity=".28" stroke-linecap="round" stroke-width="10"/>
+  <circle cx="360" cy="450" r="78" fill="none" stroke="#67d9c5" stroke-opacity=".34" stroke-width="12"/>
+  <path d="M226 604l268 0" stroke="#c8914a" stroke-opacity=".5" stroke-width="2"/>
+  <path d="M192 650h336M192 684h336" stroke="#f5efe2" stroke-opacity=".13"/>
+  <g fill="#c8914a" opacity=".45">
+    <circle cx="88" cy="100" r="5"/>
+    <circle cx="632" cy="100" r="5"/>
+    <circle cx="88" cy="800" r="5"/>
+    <circle cx="632" cy="800" r="5"/>
+  </g>
+  <path d="M0 0h720v900H0z" fill="url(#grain)" opacity=".26"/>
+  <defs>
+    <pattern id="grain" width="9" height="9" patternUnits="userSpaceOnUse">
+      <path d="M1 1h1v1H1zm5 3h1v1H6zM3 7h1v1H3z" fill="#f5efe2" opacity=".38"/>
+    </pattern>
+  </defs>
+</svg>

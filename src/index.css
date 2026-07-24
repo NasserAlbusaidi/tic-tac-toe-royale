@@ -1,0 +1,67 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  --display: 'Instrument Serif', Georgia, serif;
+  --body: 'Space Grotesk', Verdana, sans-serif;
+  --ink: #10100e;
+  --table: #161712;
+  --green: #173f36;
+  --paper: #f5efe2;
+  --muted: #b9ac94;
+  --line: rgba(245, 239, 226, 0.17);
+  --panel: rgba(19, 20, 16, 0.82);
+  --brass: #c8914a;
+  --aqua: #67d9c5;
+  --red: #db6b5c;
+  --shadow: 0 30px 90px rgba(0, 0, 0, 0.36);
+  color: var(--paper);
+  background: var(--ink);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.45;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background:
+    linear-gradient(122deg, rgba(23, 63, 54, 0.9), rgba(16, 16, 14, 0.94) 45%, rgba(75, 48, 34, 0.72)),
+    var(--ink);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100svh;
+  margin: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 34%),
+    transparent;
+}
+
+button,
+input {
+  border-radius: 8px;
+}
+
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 3px solid rgba(103, 217, 197, 0.7);
+  outline-offset: 3px;
+}
+
+button:disabled {
+  pointer-events: none;
+}
+
+::selection {
+  color: #10100e;
+  background: var(--aqua);
+}
