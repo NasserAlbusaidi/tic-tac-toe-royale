@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "concurrently -k -n server,client -c cyan,magenta \"node server/index.mjs\" \"vite --host 127.0.0.1\"",
     "dev:network": "HOST=0.0.0.0 VITE_HOST=0.0.0.0 concurrently -k -n server,client -c cyan,magenta \"node server/index.mjs\" \"vite --host 0.0.0.0\"",
@@ -10,17 +13,18 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "vitest run",
-    "check": "npm run lint && npm run test && npm run build && node --check server/index.mjs && node --check server/game-engine.mjs",
+    "check": "npm run lint && npm run test && npm run build && node --check server/index.mjs && node --check server/game-engine.mjs && node --check server/room-store.mjs && node --check server/socket-hub.mjs && node --check api/ws.mjs && node --check api/health.mjs",
     "preview": "NODE_ENV=production node server/index.mjs"
   },
   "dependencies": {
+    "@vercel/functions": "^3.7.6",
     "express": "^5.2.1",
+    "ioredis": "^5.11.1",
     "lucide-react": "^1.22.0",
     "nanoid": "^5.1.16",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "socket.io": "^4.8.3",
-    "socket.io-client": "^4.8.3"
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
@@ -31,7 +35,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
-    "concurrently": "^10.0.3",
+    "concurrently": "^10.0.4",
     "jsdom": "^29.1.1",
     "oxlint": "^1.69.0",
     "typescript": "~6.0.2",

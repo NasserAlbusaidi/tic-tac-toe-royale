@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Copy,
   Crown,
@@ -11,18 +11,31 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react'
-import { io, type Socket } from 'socket.io-client'
 import './App.css'
-import type { Mark, RoomResponse, RoomState, Winner } from './types'
+import { RoomSocket, type ConnectionState } from './room-socket'
+import type { Mark, RoomState, Winner } from './types'
 
-type ConnectionState = 'connecting' | 'online' | 'offline'
 type LobbyMode = 'host' | 'join'
 
 const roundOptions = [1, 3, 5, 7, 9]
 const savedNameKey = 'xo-royale-name'
+const clientIdKey = 'xo-royale-client-id'
+const activeRoomKey = 'xo-royale-active-room'
 
 function getInitialRoomCode() {
   return new URLSearchParams(window.location.search).get('room')?.toUpperCase() ?? ''
+}
+
+function getClientId() {
+  const savedClientId = window.sessionStorage.getItem(clientIdKey)
+
+  if (savedClientId) {
+    return savedClientId
+  }
+
+  const clientId = crypto.randomUUID()
+  window.sessionStorage.setItem(clientIdKey, clientId)
+  return clientId
 }
 
 function markLabel(mark: Mark | null) {
@@ -74,7 +87,8 @@ function scoreFor(room: RoomState, winner: Winner) {
 }
 
 function App() {
-  const [socket, setSocket] = useState<Socket | null>(null)
+  const socketRef = useRef<RoomSocket | null>(null)
+  const clientIdRef = useRef(getClientId())
   const [connection, setConnection] = useState<ConnectionState>('connecting')
   const [room, setRoom] = useState<RoomState | null>(null)
   const [mode, setMode] = useState<LobbyMode>(getInitialRoomCode() ? 'join' : 'host')
@@ -87,25 +101,38 @@ function App() {
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
-    const nextSocket = io({
-      transports: ['websocket', 'polling'],
+    const nextSocket = new RoomSocket({
+      clientId: clientIdRef.current,
+      onConnection: setConnection,
+      onError: setMessage,
+      onResumeFailure: () => {
+        window.sessionStorage.removeItem(activeRoomKey)
+        setRoom(null)
+      },
+      onRoomState: (nextRoom) => {
+        setRoom(nextRoom)
+        setMessage('')
+        window.sessionStorage.setItem(activeRoomKey, nextRoom.code)
+        const nextUrl = new URL(window.location.href)
+        nextUrl.searchParams.set('room', nextRoom.code)
+        window.history.replaceState(null, '', nextUrl)
+      },
     })
 
-    setSocket(nextSocket)
-    nextSocket.on('connect', () => setConnection('online'))
-    nextSocket.on('disconnect', () => setConnection('offline'))
-    nextSocket.on('connect_error', () => setConnection('offline'))
-    nextSocket.on('room:error', (error: string) => setMessage(error))
-    nextSocket.on('room:state', (nextRoom: RoomState) => {
-      setRoom(nextRoom)
-      setMessage('')
-      const nextUrl = new URL(window.location.href)
-      nextUrl.searchParams.set('room', nextRoom.code)
-      window.history.replaceState(null, '', nextUrl)
-    })
+    const activeRoom = window.sessionStorage.getItem(activeRoomKey)
+    const initialRoom = getInitialRoomCode()
+    const savedName = window.localStorage.getItem(savedNameKey) ?? ''
+
+    if (activeRoom && activeRoom === initialRoom) {
+      nextSocket.setActiveRoom({ roomCode: activeRoom, name: savedName })
+    }
+
+    socketRef.current = nextSocket
+    nextSocket.connect()
 
     return () => {
       nextSocket.disconnect()
+      socketRef.current = null
     }
   }, [])
 
@@ -127,6 +154,7 @@ function App() {
 
   const canPlay = Boolean(
     room &&
+      connection === 'online' &&
       room.status === 'playing' &&
       room.you.mark &&
       room.turn === room.you.mark &&
@@ -136,48 +164,64 @@ function App() {
   const opponentMark = room?.you.mark === 'X' ? 'O' : room?.you.mark === 'O' ? 'X' : null
   const isWaitingForGuest = room?.status === 'lobby' && !room.players.O?.connected
 
-  function handleCreateRoom() {
-    if (!socket) {
-      return
-    }
-
-    socket.emit(
-      'room:create',
-      { hostName: playerName, totalRounds: rounds },
-      (response: RoomResponse) => {
-        if (!response.ok || !response.room) {
-          setMessage(response.error ?? 'Could not create room.')
-          return
-        }
-
-        setRoom(response.room)
-        setMessage('')
-      },
-    )
+  function rememberActiveRoom(nextRoomCode: string) {
+    window.sessionStorage.setItem(activeRoomKey, nextRoomCode)
+    socketRef.current?.setActiveRoom({
+      roomCode: nextRoomCode,
+      name: playerName,
+    })
   }
 
-  function handleJoinRoom() {
-    if (!socket) {
+  async function handleCreateRoom() {
+    if (!socketRef.current) {
       return
     }
 
-    socket.emit(
-      'room:join',
-      { roomCode, name: playerName },
-      (response: RoomResponse) => {
-        if (!response.ok || !response.room) {
-          setMessage(response.error ?? 'Could not join room.')
-          return
-        }
+    try {
+      const response = await socketRef.current.request('room:create', {
+        name: playerName,
+        totalRounds: rounds,
+      })
 
-        setRoom(response.room)
-        setMessage(
-          response.role === 'spectator'
-            ? 'Room is full. You joined the rail.'
-            : `Joined as ${markLabel(response.mark ?? null)}.`,
-        )
-      },
-    )
+      if (!response.ok || !response.room) {
+        setMessage(response.error ?? 'Could not create room.')
+        return
+      }
+
+      rememberActiveRoom(response.room.code)
+      setRoom(response.room)
+      setMessage('')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not create room.')
+    }
+  }
+
+  async function handleJoinRoom() {
+    if (!socketRef.current) {
+      return
+    }
+
+    try {
+      const response = await socketRef.current.request('room:join', {
+        roomCode,
+        name: playerName,
+      })
+
+      if (!response.ok || !response.room) {
+        setMessage(response.error ?? 'Could not join room.')
+        return
+      }
+
+      rememberActiveRoom(response.room.code)
+      setRoom(response.room)
+      setMessage(
+        response.role === 'spectator'
+          ? 'Room is full. You joined the rail.'
+          : `Joined as ${markLabel(response.mark ?? null)}.`,
+      )
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not join room.')
+    }
   }
 
   async function copyInvite() {
@@ -191,14 +235,20 @@ function App() {
   }
 
   function emitRoomEvent(event: string, payload: Record<string, unknown> = {}) {
-    if (!socket || !room) {
+    if (!socketRef.current || !room) {
       return
     }
 
-    socket.emit(event, { roomCode: room.code, ...payload })
+    socketRef.current.send(event, { roomCode: room.code, ...payload })
   }
 
   function resetToLobby() {
+    if (room) {
+      socketRef.current?.send('room:leave', { roomCode: room.code })
+    }
+
+    socketRef.current?.setActiveRoom(null)
+    window.sessionStorage.removeItem(activeRoomKey)
     setRoom(null)
     setMessage('')
     const nextUrl = new URL(window.location.href)

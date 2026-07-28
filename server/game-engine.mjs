@@ -53,9 +53,10 @@ export function detectWinner(board) {
   return { winner: null, line: [] }
 }
 
-function createPlayer(socketId, name, mark, isHost) {
+function createPlayer(clientId, connectionId, name, mark, isHost) {
   return {
-    id: socketId,
+    id: clientId,
+    connectionId,
     name: cleanName(name, mark === 'X' ? 'Host' : 'Guest'),
     mark,
     isHost,
@@ -63,7 +64,13 @@ function createPlayer(socketId, name, mark, isHost) {
   }
 }
 
-export function createRoom({ hostId, hostName, totalRounds = 5, roomCode } = {}) {
+export function createRoom({
+  hostId,
+  hostConnectionId = hostId,
+  hostName,
+  totalRounds = 5,
+  roomCode,
+} = {}) {
   if (!hostId) {
     throw new Error('hostId is required')
   }
@@ -91,76 +98,88 @@ export function createRoom({ hostId, hostName, totalRounds = 5, roomCode } = {})
     },
     rounds: [],
     players: {
-      X: createPlayer(hostId, hostName, 'X', true),
+      X: createPlayer(hostId, hostConnectionId, hostName, 'X', true),
       O: null,
     },
     spectators: [],
-    sockets: new Set([hostId]),
     createdAt: new Date().toISOString(),
     lastEvent: 'Room opened',
   }
 }
 
-export function playerMarkFor(room, socketId) {
-  if (room.players.X?.id === socketId) {
+export function playerMarkFor(room, clientId) {
+  if (room.players.X?.id === clientId) {
     return 'X'
   }
 
-  if (room.players.O?.id === socketId) {
+  if (room.players.O?.id === clientId) {
     return 'O'
   }
 
   return null
 }
 
-export function assignParticipant(room, { socketId, name }) {
-  const existingMark = playerMarkFor(room, socketId)
+export function assignParticipant(room, { clientId, connectionId = clientId, name }) {
+  const existingMark = playerMarkFor(room, clientId)
 
   if (existingMark) {
     room.players[existingMark].connected = true
+    room.players[existingMark].connectionId = connectionId
     room.players[existingMark].name = cleanName(name, room.players[existingMark].name)
-    room.sockets.add(socketId)
     return { role: 'player', mark: existingMark }
   }
 
-  if (!room.players.O || !room.players.O.connected) {
-    room.players.O = createPlayer(socketId, name, 'O', false)
-    room.sockets.add(socketId)
+  if (!room.players.O) {
+    room.players.O = createPlayer(clientId, connectionId, name, 'O', false)
     room.lastEvent = `${room.players.O.name} joined`
     return { role: 'player', mark: 'O' }
   }
 
+  const existingSpectator = room.spectators.find((item) => item.id === clientId)
+
+  if (existingSpectator) {
+    existingSpectator.name = cleanName(name, existingSpectator.name)
+    existingSpectator.connectionId = connectionId
+    existingSpectator.connected = true
+    return { role: 'spectator', mark: null }
+  }
+
   const spectator = {
-    id: socketId,
+    id: clientId,
+    connectionId,
     name: cleanName(name, 'Spectator'),
     connected: true,
   }
 
-  room.spectators = [
-    ...room.spectators.filter((item) => item.id !== socketId),
-    spectator,
-  ]
-  room.sockets.add(socketId)
+  room.spectators = [...room.spectators, spectator]
   room.lastEvent = `${spectator.name} is watching`
 
   return { role: 'spectator', mark: null }
 }
 
-export function markDisconnected(room, socketId) {
-  room.sockets.delete(socketId)
-
-  const mark = playerMarkFor(room, socketId)
+export function markDisconnected(room, clientId, connectionId = clientId) {
+  const mark = playerMarkFor(room, clientId)
 
   if (mark) {
+    if (room.players[mark].connectionId !== connectionId) {
+      return null
+    }
+
     room.players[mark].connected = false
     room.lastEvent = `${room.players[mark].name} disconnected`
     return mark
   }
 
-  const before = room.spectators.length
-  room.spectators = room.spectators.filter((item) => item.id !== socketId)
+  const spectator = room.spectators.find(
+    (item) => item.id === clientId && item.connectionId === connectionId,
+  )
 
-  return before === room.spectators.length ? null : 'spectator'
+  if (!spectator) {
+    return null
+  }
+
+  spectator.connected = false
+  return 'spectator'
 }
 
 export function startMatch(room, socketId) {
@@ -303,6 +322,16 @@ export function resetMatch(room, socketId, totalRounds) {
 
 export function publicRoom(room, socketId) {
   const mark = playerMarkFor(room, socketId)
+  const publicPlayer = (player) =>
+    player
+      ? {
+          id: player.id,
+          name: player.name,
+          mark: player.mark,
+          isHost: player.isHost,
+          connected: player.connected,
+        }
+      : null
 
   return {
     code: room.code,
@@ -322,12 +351,16 @@ export function publicRoom(room, socketId) {
       board: [...round.board],
     })),
     players: {
-      X: room.players.X ? { ...room.players.X } : null,
-      O: room.players.O ? { ...room.players.O } : null,
+      X: publicPlayer(room.players.X),
+      O: publicPlayer(room.players.O),
     },
     spectators: room.spectators
       .filter((item) => item.connected)
-      .map((item) => ({ ...item })),
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        connected: item.connected,
+      })),
     lastEvent: room.lastEvent,
     you: {
       mark,

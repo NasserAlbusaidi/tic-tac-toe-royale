@@ -17,7 +17,7 @@ function liveRoom(totalRounds = 3) {
     roomCode: 'TEST1',
   })
 
-  assignParticipant(room, { socketId: 'guest-socket', name: 'Guest' })
+  assignParticipant(room, { clientId: 'guest-socket', name: 'Guest' })
   startMatch(room, 'host-socket')
 
   return room
@@ -47,7 +47,7 @@ describe('game engine', () => {
       error: 'Two connected players are needed.',
     })
 
-    assignParticipant(room, { socketId: 'guest-socket', name: 'Guest' })
+    assignParticipant(room, { clientId: 'guest-socket', name: 'Guest' })
     expect(startMatch(room, 'host-socket')).toEqual({ ok: true })
     expect(room.status).toBe('playing')
   })
@@ -117,5 +117,35 @@ describe('game engine', () => {
     expect(room.config.totalRounds).toBe(7)
     expect(room.scores).toEqual({ X: 0, O: 0, draws: 0 })
     expect(room.status).toBe('lobby')
+  })
+
+  it('restores a player with a stable id without allowing a seat takeover', () => {
+    const room = createRoom({
+      hostId: 'host-player',
+      hostConnectionId: 'host-connection-1',
+      roomCode: 'TEST3',
+    })
+
+    assignParticipant(room, {
+      clientId: 'guest-player',
+      connectionId: 'guest-connection-1',
+      name: 'Guest',
+    })
+
+    const restored = assignParticipant(room, {
+      clientId: 'guest-player',
+      connectionId: 'guest-connection-2',
+      name: 'Guest restored',
+    })
+    const lateJoiner = assignParticipant(room, {
+      clientId: 'another-player',
+      connectionId: 'another-connection',
+      name: 'Late joiner',
+    })
+
+    expect(restored).toEqual({ role: 'player', mark: 'O' })
+    expect(room.players.O.id).toBe('guest-player')
+    expect(room.players.O.name).toBe('Guest restored')
+    expect(lateJoiner).toEqual({ role: 'spectator', mark: null })
   })
 })
