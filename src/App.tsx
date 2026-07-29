@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import './App.css'
 import { RoomSocket, type ConnectionState } from './room-socket'
-import type { Mark, RoomState, Winner } from './types'
+import type { GameMode, Mark, RoomState, Winner } from './types'
 
 type LobbyMode = 'host' | 'join'
 
@@ -97,6 +97,7 @@ function App() {
   )
   const [roomCode, setRoomCode] = useState(getInitialRoomCode())
   const [rounds, setRounds] = useState(5)
+  const [gameMode, setGameMode] = useState<GameMode>('normal')
   const [message, setMessage] = useState('')
   const [copied, setCopied] = useState(false)
 
@@ -181,6 +182,7 @@ function App() {
       const response = await socketRef.current.request('room:create', {
         name: playerName,
         totalRounds: rounds,
+        gameMode,
       })
 
       if (!response.ok || !response.room) {
@@ -277,7 +279,7 @@ function App() {
           <div className="welcome-copy">
             <span className="eyebrow">Browser table</span>
             <h1>Play a sharper Tic Tac Toe match.</h1>
-            <p>Private table. Clean score. Every move visible.</p>
+            <p>Private table. Classic or Misère rules. Every move visible.</p>
           </div>
 
           <div className="setup-panel">
@@ -313,6 +315,27 @@ function App() {
 
             {mode === 'host' ? (
               <>
+                <fieldset className="rule-select">
+                  <legend>Rules</legend>
+                  <div>
+                    <button
+                      className={gameMode === 'normal' ? 'active' : ''}
+                      type="button"
+                      onClick={() => setGameMode('normal')}
+                    >
+                      <span>Normal</span>
+                      <small>Make three, win</small>
+                    </button>
+                    <button
+                      className={gameMode === 'misere' ? 'active' : ''}
+                      type="button"
+                      onClick={() => setGameMode('misere')}
+                    >
+                      <span>Misère</span>
+                      <small>Make three, lose</small>
+                    </button>
+                  </div>
+                </fieldset>
                 <fieldset className="round-select">
                   <legend>Rounds</legend>
                   <div>
@@ -388,7 +411,11 @@ function App() {
             </div>
 
             <div className="meta-strip">
-              <span>{room.config.totalRounds} rounds</span>
+              <span>{room.config.mode === 'misere' ? 'Misère rules' : 'Normal rules'}</span>
+              <span>
+                {room.config.totalRounds}{' '}
+                {room.config.totalRounds === 1 ? 'round' : 'rounds'}
+              </span>
               <span>Round {Math.min(room.currentRound, room.config.totalRounds)}</span>
               <span>{room.spectators.length} watching</span>
             </div>
@@ -442,6 +469,7 @@ function App() {
               <span>{room.lastEvent}</span>
               <h2>{winnerText(room)}</h2>
               <p>
+                {room.config.mode === 'misere' ? 'Three in a row loses. ' : ''}
                 You are {markLabel(room.you.mark)}
                 {opponentMark ? ` against ${room.players[opponentMark]?.name ?? opponentMark}` : ''}
               </p>

@@ -116,6 +116,7 @@ export function createSocketHub({
         hostConnectionId: session.connectionId,
         hostName: identity.name,
         totalRounds: payload?.totalRounds,
+        gameMode: payload?.gameMode,
       })
 
       if (await store.create(candidate)) {

@@ -1,6 +1,7 @@
 import { customAlphabet } from 'nanoid'
 
 export const marks = ['X', 'O']
+export const gameModes = ['normal', 'misere']
 export const winLines = [
   [0, 1, 2],
   [3, 4, 5],
@@ -37,6 +38,10 @@ export function clampRounds(value) {
   return Math.max(1, Math.min(9, parsed))
 }
 
+export function normalizeGameMode(value) {
+  return value === 'misere' ? 'misere' : 'normal'
+}
+
 export function detectWinner(board) {
   for (const line of winLines) {
     const [a, b, c] = line
@@ -69,6 +74,7 @@ export function createRoom({
   hostConnectionId = hostId,
   hostName,
   totalRounds = 5,
+  gameMode = 'normal',
   roomCode,
 } = {}) {
   if (!hostId) {
@@ -82,6 +88,7 @@ export function createRoom({
     hostId,
     config: {
       totalRounds: clampRounds(totalRounds),
+      mode: normalizeGameMode(gameMode),
     },
     status: 'lobby',
     board: emptyBoard(),
@@ -202,7 +209,7 @@ export function startMatch(room, socketId) {
   return { ok: true }
 }
 
-function finishRound(room, winner, line) {
+function finishRound(room, winner, line, completedBy = winner) {
   if (winner === 'draw') {
     room.scores.draws += 1
   } else {
@@ -214,6 +221,7 @@ function finishRound(room, winner, line) {
   room.rounds.push({
     round: room.currentRound,
     winner,
+    completedBy: winner === 'draw' ? null : completedBy,
     line: [...line],
     starter: room.starter,
     board: [...room.board],
@@ -231,11 +239,17 @@ function finishRound(room, winner, line) {
     room.lastEvent =
       room.matchWinner === 'draw'
         ? 'Match ended level'
-        : `${room.matchWinner} won the match`
+        : room.config.mode === 'misere'
+          ? `${completedBy} made three; ${room.matchWinner} won the match`
+          : `${room.matchWinner} won the match`
   } else {
     room.status = 'roundOver'
     room.lastEvent =
-      winner === 'draw' ? 'Round ended in a draw' : `${winner} won the round`
+      winner === 'draw'
+        ? 'Round ended in a draw'
+        : room.config.mode === 'misere'
+          ? `${completedBy} made three and lost the round`
+          : `${winner} won the round`
   }
 }
 
@@ -269,7 +283,19 @@ export function applyMove(room, socketId, index) {
   const result = detectWinner(room.board)
 
   if (result.winner) {
-    finishRound(room, result.winner, result.line)
+    if (result.winner === 'draw') {
+      finishRound(room, result.winner, result.line)
+    } else {
+      const completedBy = result.winner
+      const roundWinner =
+        normalizeGameMode(room.config.mode) === 'misere'
+          ? completedBy === 'X'
+            ? 'O'
+            : 'X'
+          : completedBy
+
+      finishRound(room, roundWinner, result.line, completedBy)
+    }
   } else {
     room.turn = mark === 'X' ? 'O' : 'X'
     room.lastEvent = `${room.turn} to move`
@@ -335,7 +361,10 @@ export function publicRoom(room, socketId) {
 
   return {
     code: room.code,
-    config: { ...room.config },
+    config: {
+      ...room.config,
+      mode: normalizeGameMode(room.config?.mode),
+    },
     status: room.status,
     board: [...room.board],
     turn: room.turn,
@@ -347,6 +376,8 @@ export function publicRoom(room, socketId) {
     scores: { ...room.scores },
     rounds: room.rounds.map((round) => ({
       ...round,
+      completedBy:
+        round.completedBy ?? (round.winner === 'draw' ? null : round.winner),
       line: [...round.line],
       board: [...round.board],
     })),

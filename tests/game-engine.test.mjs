@@ -5,6 +5,7 @@ import {
   createRoom,
   detectWinner,
   nextRound,
+  normalizeGameMode,
   resetMatch,
   startMatch,
 } from '../server/game-engine.mjs'
@@ -33,6 +34,14 @@ describe('game engine', () => {
       winner: 'draw',
       line: [],
     })
+  })
+
+  it('normalizes room modes and defaults to normal play', () => {
+    expect(normalizeGameMode('misere')).toBe('misere')
+    expect(normalizeGameMode('unknown')).toBe('normal')
+    expect(createRoom({ hostId: 'host-socket', roomCode: 'TEST4' }).config.mode).toBe(
+      'normal',
+    )
   })
 
   it('requires the host and two connected players to start', () => {
@@ -98,6 +107,32 @@ describe('game engine', () => {
 
     expect(room.status).toBe('matchOver')
     expect(room.matchWinner).toBe('X')
+  })
+
+  it('awards a Misère round to the opponent of the player who makes three', () => {
+    const room = createRoom({
+      hostId: 'host-socket',
+      hostName: 'Host',
+      totalRounds: 1,
+      gameMode: 'misere',
+      roomCode: 'TEST5',
+    })
+
+    assignParticipant(room, { clientId: 'guest-socket', name: 'Guest' })
+    startMatch(room, 'host-socket')
+    applyMove(room, 'host-socket', 0)
+    applyMove(room, 'guest-socket', 3)
+    applyMove(room, 'host-socket', 1)
+    applyMove(room, 'guest-socket', 4)
+    applyMove(room, 'host-socket', 2)
+
+    expect(room.status).toBe('matchOver')
+    expect(room.winner).toBe('O')
+    expect(room.matchWinner).toBe('O')
+    expect(room.scores).toEqual({ X: 0, O: 1, draws: 0 })
+    expect(room.winningLine).toEqual([0, 1, 2])
+    expect(room.rounds[0].completedBy).toBe('X')
+    expect(room.lastEvent).toBe('X made three; O won the match')
   })
 
   it('lets the host reset the table and update round count', () => {

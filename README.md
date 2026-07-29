@@ -1,7 +1,9 @@
 # XO Royale
 
-Browser Tic Tac Toe with private rooms, live play, reconnect-safe player
-sessions, configurable rounds, spectators, scoring, and round history.
+Browser Tic Tac Toe with private rooms, live play, Normal or Misère rules,
+reconnect-safe player sessions, configurable rounds, spectators, scoring, and
+round history. In Misère mode, the player who makes three in a row loses the
+round.
 
 ## Architecture
 

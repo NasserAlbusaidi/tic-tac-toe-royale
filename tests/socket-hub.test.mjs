@@ -57,7 +57,7 @@ describe('socket hub', () => {
     await hub?.close()
   })
 
-  it('plays a complete online round and restores the host after reconnecting', async () => {
+  it('plays a complete online Misère round and restores the host after reconnecting', async () => {
     hub = createSocketHub({
       store: createMemoryRoomStore(),
       instanceId: 'test-instance',
@@ -71,8 +71,10 @@ describe('socket hub', () => {
       clientId: 'host-client-123',
       name: 'Host',
       totalRounds: 1,
+      gameMode: 'misere',
     })
     const roomCode = created.payload.room.code
+    expect(created.payload.room.config.mode).toBe('misere')
 
     const joined = await request(guest, 'join-1', 'room:join', {
       clientId: 'guest-client-456',
@@ -92,7 +94,8 @@ describe('socket hub', () => {
     })
 
     expect(winningMove.payload.room.status).toBe('matchOver')
-    expect(winningMove.payload.room.matchWinner).toBe('X')
+    expect(winningMove.payload.room.matchWinner).toBe('O')
+    expect(winningMove.payload.room.rounds[0].completedBy).toBe('X')
 
     host.close()
     const restoredHost = new FakeSocket()
@@ -105,6 +108,6 @@ describe('socket hub', () => {
 
     expect(resumed.payload.room.you.isHost).toBe(true)
     expect(resumed.payload.room.players.X.connected).toBe(true)
-    expect(resumed.payload.room.matchWinner).toBe('X')
+    expect(resumed.payload.room.matchWinner).toBe('O')
   })
 })

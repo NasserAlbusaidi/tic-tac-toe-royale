@@ -1,4 +1,5 @@
 export type Mark = 'X' | 'O'
+export type GameMode = 'normal' | 'misere'
 export type Winner = Mark | 'draw' | null
 export type RoomStatus = 'lobby' | 'playing' | 'roundOver' | 'matchOver'
 
@@ -13,6 +14,7 @@ export type PlayerState = {
 export type RoundSummary = {
   round: number
   winner: Winner
+  completedBy: Mark | null
   line: number[]
   starter: Mark
   board: (Mark | null)[]
@@ -23,6 +25,7 @@ export type RoomState = {
   code: string
   config: {
     totalRounds: number
+    mode: GameMode
   }
   status: RoomStatus
   board: (Mark | null)[]

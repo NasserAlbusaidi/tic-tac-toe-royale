@@ -147,6 +147,7 @@
 }
 
 .mode-switch,
+.rule-select div,
 .round-select div {
   display: grid;
   gap: 8px;
@@ -158,6 +159,7 @@
 }
 
 .mode-switch button,
+.rule-select button,
 .round-select button,
 .room-code button,
 .primary-action,
@@ -180,6 +182,7 @@
 }
 
 .mode-switch button:hover,
+.rule-select button:hover,
 .round-select button:hover,
 .room-code button:hover,
 .primary-action:hover,
@@ -189,6 +192,7 @@
 }
 
 .mode-switch button.active,
+.rule-select button.active,
 .round-select button.active {
   border-color: var(--brass);
   background: rgba(200, 145, 74, 0.18);
@@ -202,6 +206,7 @@
 }
 
 .setup-panel label span,
+.rule-select legend,
 .round-select legend {
   color: var(--muted);
   font-size: 13px;
@@ -227,10 +232,32 @@ input:focus {
   box-shadow: 0 0 0 3px rgba(103, 217, 197, 0.14);
 }
 
+.rule-select,
 .round-select {
   margin: 0 0 20px;
   padding: 0;
   border: 0;
+}
+
+.rule-select div {
+  grid-template-columns: 1fr 1fr;
+  margin-top: 8px;
+}
+
+.rule-select button {
+  min-height: 58px;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rule-select button small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.rule-select button.active small {
+  color: var(--paper);
 }
 
 .round-select div {
