@@ -2,6 +2,9 @@ import { customAlphabet } from 'nanoid'
 
 export const marks = ['X', 'O']
 export const gameModes = ['normal', 'misere']
+export const CHAT_MESSAGE_LIMIT = 280
+export const ROOM_CHAT_HISTORY_LIMIT = 50
+export const ROOM_GAME_LOG_LIMIT = 50
 export const winLines = [
   [0, 1, 2],
   [3, 4, 5],
@@ -26,6 +29,21 @@ export function cleanName(name, fallback = 'Player') {
     .slice(0, 18)
 
   return cleaned || fallback
+}
+
+export function cleanChatMessage(message) {
+  return String(message ?? '').replace(/\r\n?/g, '\n').trim()
+}
+
+function appendGameLog(room, text, createdAt = new Date().toISOString()) {
+  const entries = Array.isArray(room.gameLog) ? room.gameLog : []
+  const nextEntry = {
+    id: `${createdAt}-${entries.length + 1}`,
+    text,
+    createdAt,
+  }
+
+  room.gameLog = [...entries, nextEntry].slice(-ROOM_GAME_LOG_LIMIT)
 }
 
 export function clampRounds(value) {
@@ -58,8 +76,15 @@ export function detectWinner(board) {
   return { winner: null, line: [] }
 }
 
-function createPlayer(clientId, connectionId, name, mark, isHost) {
-  return {
+function createPlayer(
+  clientId,
+  connectionId,
+  name,
+  mark,
+  isHost,
+  resumeTokenHash,
+) {
+  const player = {
     id: clientId,
     connectionId,
     name: cleanName(name, mark === 'X' ? 'Host' : 'Guest'),
@@ -67,12 +92,19 @@ function createPlayer(clientId, connectionId, name, mark, isHost) {
     isHost,
     connected: true,
   }
+
+  if (resumeTokenHash) {
+    player.resumeTokenHash = resumeTokenHash
+  }
+
+  return player
 }
 
 export function createRoom({
   hostId,
   hostConnectionId = hostId,
   hostName,
+  hostResumeTokenHash,
   totalRounds = 5,
   gameMode = 'normal',
   roomCode,
@@ -83,7 +115,7 @@ export function createRoom({
 
   const code = String(roomCode ?? makeCode()).toUpperCase()
 
-  return {
+  const room = {
     code,
     hostId,
     config: {
@@ -104,14 +136,26 @@ export function createRoom({
       draws: 0,
     },
     rounds: [],
+    chatMessages: [],
+    gameLog: [],
     players: {
-      X: createPlayer(hostId, hostConnectionId, hostName, 'X', true),
+      X: createPlayer(
+        hostId,
+        hostConnectionId,
+        hostName,
+        'X',
+        true,
+        hostResumeTokenHash,
+      ),
       O: null,
     },
     spectators: [],
     createdAt: new Date().toISOString(),
     lastEvent: 'Room opened',
   }
+
+  appendGameLog(room, 'Room opened')
+  return room
 }
 
 export function playerMarkFor(room, clientId) {
@@ -126,7 +170,15 @@ export function playerMarkFor(room, clientId) {
   return null
 }
 
-export function assignParticipant(room, { clientId, connectionId = clientId, name }) {
+export function assignParticipant(
+  room,
+  {
+    clientId,
+    connectionId = clientId,
+    name,
+    resumeTokenHash,
+  },
+) {
   const existingMark = playerMarkFor(room, clientId)
 
   if (existingMark) {
@@ -137,8 +189,16 @@ export function assignParticipant(room, { clientId, connectionId = clientId, nam
   }
 
   if (!room.players.O) {
-    room.players.O = createPlayer(clientId, connectionId, name, 'O', false)
+    room.players.O = createPlayer(
+      clientId,
+      connectionId,
+      name,
+      'O',
+      false,
+      resumeTokenHash,
+    )
     room.lastEvent = `${room.players.O.name} joined`
+    appendGameLog(room, `${room.players.O.name} joined the table.`)
     return { role: 'player', mark: 'O' }
   }
 
@@ -158,8 +218,13 @@ export function assignParticipant(room, { clientId, connectionId = clientId, nam
     connected: true,
   }
 
+  if (resumeTokenHash) {
+    spectator.resumeTokenHash = resumeTokenHash
+  }
+
   room.spectators = [...room.spectators, spectator]
   room.lastEvent = `${spectator.name} is watching`
+  appendGameLog(room, `${spectator.name} joined as a spectator.`)
 
   return { role: 'spectator', mark: null }
 }
@@ -205,6 +270,7 @@ export function startMatch(room, socketId) {
   room.winningLine = []
   room.matchWinner = null
   room.lastEvent = `Round ${room.currentRound} started`
+  appendGameLog(room, `Round ${room.currentRound} started.`)
 
   return { ok: true }
 }
@@ -251,6 +317,8 @@ function finishRound(room, winner, line, completedBy = winner) {
           ? `${completedBy} made three and lost the round`
           : `${winner} won the round`
   }
+
+  appendGameLog(room, `${room.lastEvent}.`)
 }
 
 export function applyMove(room, socketId, index) {
@@ -279,6 +347,10 @@ export function applyMove(room, socketId, index) {
   }
 
   room.board[cell] = mark
+  appendGameLog(
+    room,
+    `${room.players[mark]?.name ?? mark} placed ${mark} in cell ${cell + 1}.`,
+  )
 
   const result = detectWinner(room.board)
 
@@ -321,6 +393,7 @@ export function nextRound(room, socketId) {
   room.winningLine = []
   room.status = 'playing'
   room.lastEvent = `Round ${room.currentRound} started`
+  appendGameLog(room, `Round ${room.currentRound} started.`)
 
   return { ok: true }
 }
@@ -342,8 +415,54 @@ export function resetMatch(room, socketId, totalRounds) {
   room.scores = { X: 0, O: 0, draws: 0 }
   room.rounds = []
   room.lastEvent = 'Match reset'
+  appendGameLog(room, 'The host reset the match.')
 
   return { ok: true }
+}
+
+export function appendChatMessage(
+  room,
+  socketId,
+  message,
+  {
+    id,
+    createdAt = new Date().toISOString(),
+  } = {},
+) {
+  const mark = playerMarkFor(room, socketId)
+
+  if (!mark) {
+    return {
+      ok: false,
+      error: 'Spectators can read chat but cannot send messages.',
+    }
+  }
+
+  const body = cleanChatMessage(message)
+
+  if (!body) {
+    return { ok: false, error: 'Write a message before sending.' }
+  }
+
+  if (body.length > CHAT_MESSAGE_LIMIT) {
+    return {
+      ok: false,
+      error: `Messages can be at most ${CHAT_MESSAGE_LIMIT} characters.`,
+    }
+  }
+
+  const sender = room.players[mark]
+  const chatMessages = Array.isArray(room.chatMessages) ? room.chatMessages : []
+  const nextMessage = {
+    id: id ?? `${createdAt}-${chatMessages.length + 1}`,
+    senderId: sender.id,
+    senderName: sender.name,
+    body,
+    createdAt,
+  }
+
+  room.chatMessages = [...chatMessages, nextMessage].slice(-ROOM_CHAT_HISTORY_LIMIT)
+  return { ok: true, message: nextMessage }
 }
 
 export function publicRoom(room, socketId) {
@@ -381,6 +500,8 @@ export function publicRoom(room, socketId) {
       line: [...round.line],
       board: [...round.board],
     })),
+    chatMessages: (room.chatMessages ?? []).map((message) => ({ ...message })),
+    gameLog: (room.gameLog ?? []).map((entry) => ({ ...entry })),
     players: {
       X: publicPlayer(room.players.X),
       O: publicPlayer(room.players.O),

@@ -21,6 +21,20 @@ export type RoundSummary = {
   endedAt: string
 }
 
+export type ChatMessage = {
+  id: string
+  senderId: string
+  senderName: string
+  body: string
+  createdAt: string
+}
+
+export type GameLogEntry = {
+  id: string
+  text: string
+  createdAt: string
+}
+
 export type RoomState = {
   code: string
   config: {
@@ -41,6 +55,8 @@ export type RoomState = {
     draws: number
   }
   rounds: RoundSummary[]
+  chatMessages: ChatMessage[]
+  gameLog: GameLogEntry[]
   players: {
     X: PlayerState | null
     O: PlayerState | null
@@ -61,6 +77,7 @@ export type RoomState = {
 export type RoomResponse = {
   ok: boolean
   error?: string
+  resumeToken?: string
   role?: 'player' | 'spectator'
   mark?: Mark | null
   room?: RoomState

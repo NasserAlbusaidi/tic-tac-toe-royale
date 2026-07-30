@@ -11,6 +11,7 @@ type PendingRequest = {
 type ActiveRoom = {
   roomCode: string
   name: string
+  resumeToken: string
 }
 
 type RoomSocketOptions = {
@@ -114,6 +115,7 @@ export class RoomSocket {
         void this.request('room:resume', {
           roomCode: this.activeRoom.roomCode,
           name: this.activeRoom.name,
+          resumeToken: this.activeRoom.resumeToken,
         })
           .then((result) => {
             if (!result.ok) {

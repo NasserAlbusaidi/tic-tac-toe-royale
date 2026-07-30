@@ -1,6 +1,12 @@
-import { randomUUID } from 'node:crypto'
+import {
+  createHash,
+  randomBytes,
+  randomUUID,
+  timingSafeEqual,
+} from 'node:crypto'
 import {
   applyMove,
+  appendChatMessage,
   assignParticipant,
   createRoom,
   markDisconnected,
@@ -13,6 +19,13 @@ import { createRoomStore } from './room-store.mjs'
 
 const validClientId = /^[A-Za-z0-9_-]{8,64}$/
 const validRoomCode = /^[A-Z2-9]{5}$/
+const validResumeToken = /^[A-Za-z0-9_-]{43}$/
+const chatRateLimitWindowMs = 10_000
+const chatRateLimitCount = 5
+const legacyRoomError =
+  'This room predates secure sessions. Ask the host to create a new room.'
+const invalidResumeError =
+  'Your secure room session could not be verified. Rejoin from the original tab.'
 
 function normalizeRoomCode(code) {
   return String(code ?? '').trim().toUpperCase()
@@ -69,6 +82,46 @@ function requireRoomCode(payload, fallback) {
   return roomCode
 }
 
+function createResumeCredential() {
+  const token = randomBytes(32).toString('base64url')
+
+  return {
+    token,
+    hash: hashResumeToken(token),
+  }
+}
+
+function hashResumeToken(token) {
+  return createHash('sha256').update(token).digest('hex')
+}
+
+function participantFor(room, clientId) {
+  if (room.players.X?.id === clientId) {
+    return room.players.X
+  }
+
+  if (room.players.O?.id === clientId) {
+    return room.players.O
+  }
+
+  return room.spectators.find((spectator) => spectator.id === clientId) ?? null
+}
+
+function roomUsesSecureSessions(room) {
+  return Boolean(room.players.X?.resumeTokenHash)
+}
+
+function verifyResumeToken(participant, token) {
+  if (!participant?.resumeTokenHash || !validResumeToken.test(String(token ?? ''))) {
+    return false
+  }
+
+  const expected = Buffer.from(participant.resumeTokenHash, 'hex')
+  const actual = Buffer.from(hashResumeToken(token), 'hex')
+
+  return expected.length === actual.length && timingSafeEqual(expected, actual)
+}
+
 export function createSocketHub({
   store = createRoomStore(),
   instanceId = randomUUID(),
@@ -108,6 +161,7 @@ export function createSocketHub({
 
   async function createNewRoom(socket, session, payload, requestId) {
     const identity = requireIdentity(payload)
+    const credential = createResumeCredential()
     let room = null
 
     for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -115,6 +169,7 @@ export function createSocketHub({
         hostId: identity.clientId,
         hostConnectionId: session.connectionId,
         hostName: identity.name,
+        hostResumeTokenHash: credential.hash,
         totalRounds: payload?.totalRounds,
         gameMode: payload?.gameMode,
       })
@@ -133,24 +188,75 @@ export function createSocketHub({
     session.roomCode = room.code
     response(socket, requestId, {
       ok: true,
+      resumeToken: credential.token,
       room: publicRoom(room, identity.clientId),
     })
     await broadcastRoom(room.code)
   }
 
-  async function joinRoom(socket, session, payload, requestId) {
+  async function joinRoom(socket, session, payload, requestId, { resumeOnly = false } = {}) {
     const identity = requireIdentity(payload)
     const roomCode = requireRoomCode(payload, session.roomCode)
-    const mutation = await store.mutate(roomCode, (room) => ({
-      result: assignParticipant(room, {
-        clientId: identity.clientId,
-        connectionId: session.connectionId,
-        name: identity.name,
-      }),
-    }))
+    const credential = createResumeCredential()
+    const mutation = await store.mutate(roomCode, (room) => {
+      if (!roomUsesSecureSessions(room)) {
+        return {
+          commit: false,
+          result: { ok: false, error: legacyRoomError },
+        }
+      }
+
+      const existingParticipant = participantFor(room, identity.clientId)
+
+      if (existingParticipant) {
+        if (!verifyResumeToken(existingParticipant, payload.resumeToken)) {
+          return {
+            commit: false,
+            result: { ok: false, error: invalidResumeError },
+          }
+        }
+
+        return {
+          result: {
+            ok: true,
+            ...assignParticipant(room, {
+              clientId: identity.clientId,
+              connectionId: session.connectionId,
+              name: identity.name,
+            }),
+            resumeToken: payload.resumeToken,
+          },
+        }
+      }
+
+      if (resumeOnly) {
+        return {
+          commit: false,
+          result: { ok: false, error: invalidResumeError },
+        }
+      }
+
+      return {
+        result: {
+          ok: true,
+          ...assignParticipant(room, {
+            clientId: identity.clientId,
+            connectionId: session.connectionId,
+            name: identity.name,
+            resumeTokenHash: credential.hash,
+          }),
+          resumeToken: credential.token,
+        },
+      }
+    })
 
     if (!mutation) {
       throw new Error('Room not found.')
+    }
+
+    if (!mutation.result.ok) {
+      failure(socket, requestId, mutation.result.error)
+      return
     }
 
     session.clientId = identity.clientId
@@ -159,6 +265,7 @@ export function createSocketHub({
       ok: true,
       role: mutation.result.role,
       mark: mutation.result.mark,
+      resumeToken: mutation.result.resumeToken,
       room: publicRoom(mutation.room, identity.clientId),
     })
     await broadcastRoom(roomCode)
@@ -194,6 +301,19 @@ export function createSocketHub({
     await broadcastRoom(roomCode)
   }
 
+  function enforceChatRateLimit(session) {
+    const now = Date.now()
+    session.chatTimestamps = session.chatTimestamps.filter(
+      (timestamp) => now - timestamp < chatRateLimitWindowMs,
+    )
+
+    if (session.chatTimestamps.length >= chatRateLimitCount) {
+      throw new Error('Chat is moving too quickly. Wait a moment and try again.')
+    }
+
+    session.chatTimestamps.push(now)
+  }
+
   async function handleMessage(socket, session, data) {
     let message
 
@@ -206,8 +326,12 @@ export function createSocketHub({
           await createNewRoom(socket, session, payload, message.requestId)
           break
         case 'room:join':
-        case 'room:resume':
           await joinRoom(socket, session, payload, message.requestId)
+          break
+        case 'room:resume':
+          await joinRoom(socket, session, payload, message.requestId, {
+            resumeOnly: true,
+          })
           break
         case 'match:start':
           await mutateGameRoom(socket, session, payload, message.requestId, startMatch)
@@ -225,10 +349,21 @@ export function createSocketHub({
             resetMatch(room, clientId, payload.totalRounds),
           )
           break
+        case 'chat:send':
+          enforceChatRateLimit(session)
+          await mutateGameRoom(socket, session, payload, message.requestId, (room, clientId) =>
+            appendChatMessage(room, clientId, payload.text, {
+              id: randomUUID(),
+            }),
+          )
+          break
         case 'room:leave':
-          await disconnectSession(session)
-          session.clientId = null
-          session.roomCode = null
+          {
+            const departingSession = { ...session }
+            session.clientId = null
+            session.roomCode = null
+            await disconnectSession(departingSession)
+          }
           response(socket, message.requestId, { ok: true })
           break
         default:
@@ -263,6 +398,7 @@ export function createSocketHub({
       connectionId: `${instanceId}_${randomUUID()}`,
       clientId: null,
       roomCode: null,
+      chatTimestamps: [],
       queue: Promise.resolve(),
     }
 

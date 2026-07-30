@@ -1,26 +1,38 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  BarChart3,
   Copy,
   Crown,
+  Grid3X3,
+  ListOrdered,
+  MessageCircle,
   Play,
   RotateCcw,
+  Send,
   Share2,
   Sparkles,
   Trophy,
   Users,
   Wifi,
   WifiOff,
+  X as XIcon,
 } from 'lucide-react'
 import './App.css'
 import { RoomSocket, type ConnectionState } from './room-socket'
 import type { GameMode, Mark, RoomState, Winner } from './types'
 
 type LobbyMode = 'host' | 'join'
+type MobilePanel = 'scores' | 'chat' | null
+type CommunicationTab = 'chat' | 'log'
+type DesktopRailTab = 'scores' | CommunicationTab
 
 const roundOptions = [1, 3, 5, 7, 9]
+const chatMessageLimit = 280
 const savedNameKey = 'xo-royale-name'
 const clientIdKey = 'xo-royale-client-id'
 const activeRoomKey = 'xo-royale-active-room'
+const roomTokenKey = (roomCode: string) =>
+  `xo-royale-room-token:${roomCode.trim().toUpperCase()}`
 
 function getInitialRoomCode() {
   return new URLSearchParams(window.location.search).get('room')?.toUpperCase() ?? ''
@@ -86,6 +98,35 @@ function scoreFor(room: RoomState, winner: Winner) {
   return room.scores.draws
 }
 
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+function useMobileLayout() {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(max-width: 760px)').matches,
+  )
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') {
+      return undefined
+    }
+
+    const query = window.matchMedia('(max-width: 760px)')
+    const update = () => setIsMobile(query.matches)
+
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+
+  return isMobile
+}
+
 function App() {
   const socketRef = useRef<RoomSocket | null>(null)
   const clientIdRef = useRef(getClientId())
@@ -100,6 +141,17 @@ function App() {
   const [gameMode, setGameMode] = useState<GameMode>('normal')
   const [message, setMessage] = useState('')
   const [copied, setCopied] = useState(false)
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null)
+  const [communicationTab, setCommunicationTab] =
+    useState<CommunicationTab>('chat')
+  const [desktopRailTab, setDesktopRailTab] =
+    useState<DesktopRailTab>('scores')
+  const [chatDraft, setChatDraft] = useState('')
+  const [sendingChat, setSendingChat] = useState(false)
+  const [unreadChat, setUnreadChat] = useState(0)
+  const isMobile = useMobileLayout()
+  const lastChatRoomRef = useRef<string | null>(null)
+  const lastChatMessageIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     const nextSocket = new RoomSocket({
@@ -107,7 +159,14 @@ function App() {
       onConnection: setConnection,
       onError: setMessage,
       onResumeFailure: () => {
+        const failedRoom =
+          window.sessionStorage.getItem(activeRoomKey) ?? getInitialRoomCode()
         window.sessionStorage.removeItem(activeRoomKey)
+
+        if (failedRoom) {
+          window.sessionStorage.removeItem(roomTokenKey(failedRoom))
+        }
+
         setRoom(null)
       },
       onRoomState: (nextRoom) => {
@@ -123,9 +182,18 @@ function App() {
     const activeRoom = window.sessionStorage.getItem(activeRoomKey)
     const initialRoom = getInitialRoomCode()
     const savedName = window.localStorage.getItem(savedNameKey) ?? ''
+    const activeResumeToken = activeRoom
+      ? window.sessionStorage.getItem(roomTokenKey(activeRoom))
+      : null
 
-    if (activeRoom && activeRoom === initialRoom) {
-      nextSocket.setActiveRoom({ roomCode: activeRoom, name: savedName })
+    if (activeRoom && activeRoom === initialRoom && activeResumeToken) {
+      nextSocket.setActiveRoom({
+        roomCode: activeRoom,
+        name: savedName,
+        resumeToken: activeResumeToken,
+      })
+    } else if (activeRoom && activeRoom === initialRoom) {
+      window.sessionStorage.removeItem(activeRoomKey)
     }
 
     socketRef.current = nextSocket
@@ -142,6 +210,50 @@ function App() {
       window.localStorage.setItem(savedNameKey, playerName.trim())
     }
   }, [playerName])
+
+  const chatIsVisible = room
+    ? isMobile
+      ? mobilePanel === 'chat' && communicationTab === 'chat'
+      : desktopRailTab === 'chat'
+    : false
+
+  useEffect(() => {
+    if (!room) {
+      lastChatRoomRef.current = null
+      lastChatMessageIdRef.current = null
+      setUnreadChat(0)
+      return
+    }
+
+    const messages = room.chatMessages ?? []
+
+    if (lastChatRoomRef.current !== room.code) {
+      lastChatRoomRef.current = room.code
+      lastChatMessageIdRef.current = messages.at(-1)?.id ?? null
+      setUnreadChat(0)
+      return
+    }
+
+    const previousMessageIndex = lastChatMessageIdRef.current
+      ? messages.findIndex((chatMessage) => chatMessage.id === lastChatMessageIdRef.current)
+      : -1
+    const additions = (
+      previousMessageIndex >= 0
+        ? messages.slice(previousMessageIndex + 1)
+        : lastChatMessageIdRef.current
+          ? messages.slice(-1)
+          : messages
+    )
+      .filter((chatMessage) => chatMessage.senderId !== clientIdRef.current)
+
+    lastChatMessageIdRef.current = messages.at(-1)?.id ?? null
+
+    if (chatIsVisible) {
+      setUnreadChat(0)
+    } else if (additions.length > 0) {
+      setUnreadChat((count) => count + additions.length)
+    }
+  }, [chatIsVisible, room])
 
   const shareUrl = useMemo(() => {
     if (!room) {
@@ -165,11 +277,13 @@ function App() {
   const opponentMark = room?.you.mark === 'X' ? 'O' : room?.you.mark === 'O' ? 'X' : null
   const isWaitingForGuest = room?.status === 'lobby' && !room.players.O?.connected
 
-  function rememberActiveRoom(nextRoomCode: string) {
+  function rememberActiveRoom(nextRoomCode: string, resumeToken: string) {
     window.sessionStorage.setItem(activeRoomKey, nextRoomCode)
+    window.sessionStorage.setItem(roomTokenKey(nextRoomCode), resumeToken)
     socketRef.current?.setActiveRoom({
       roomCode: nextRoomCode,
       name: playerName,
+      resumeToken,
     })
   }
 
@@ -185,12 +299,12 @@ function App() {
         gameMode,
       })
 
-      if (!response.ok || !response.room) {
+      if (!response.ok || !response.room || !response.resumeToken) {
         setMessage(response.error ?? 'Could not create room.')
         return
       }
 
-      rememberActiveRoom(response.room.code)
+      rememberActiveRoom(response.room.code, response.resumeToken)
       setRoom(response.room)
       setMessage('')
     } catch (error) {
@@ -207,14 +321,16 @@ function App() {
       const response = await socketRef.current.request('room:join', {
         roomCode,
         name: playerName,
+        resumeToken:
+          window.sessionStorage.getItem(roomTokenKey(roomCode)) ?? undefined,
       })
 
-      if (!response.ok || !response.room) {
+      if (!response.ok || !response.room || !response.resumeToken) {
         setMessage(response.error ?? 'Could not join room.')
         return
       }
 
-      rememberActiveRoom(response.room.code)
+      rememberActiveRoom(response.room.code, response.resumeToken)
       setRoom(response.room)
       setMessage(
         response.role === 'spectator'
@@ -244,23 +360,71 @@ function App() {
     socketRef.current.send(event, { roomCode: room.code, ...payload })
   }
 
+  function openMobileChat() {
+    setMobilePanel('chat')
+    setCommunicationTab('chat')
+    setUnreadChat(0)
+  }
+
+  function openDesktopTab(tab: DesktopRailTab) {
+    setDesktopRailTab(tab)
+
+    if (tab === 'chat') {
+      setUnreadChat(0)
+    }
+  }
+
+  async function sendChatMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!socketRef.current || !room || !chatDraft.trim() || sendingChat) {
+      return
+    }
+
+    setSendingChat(true)
+
+    try {
+      const response = await socketRef.current.request('chat:send', {
+        roomCode: room.code,
+        text: chatDraft,
+      })
+
+      if (!response.ok) {
+        setMessage(response.error ?? 'Could not send that message.')
+        return
+      }
+
+      setChatDraft('')
+      setMessage('')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not send that message.')
+    } finally {
+      setSendingChat(false)
+    }
+  }
+
   function resetToLobby() {
     if (room) {
       socketRef.current?.send('room:leave', { roomCode: room.code })
+      window.sessionStorage.removeItem(roomTokenKey(room.code))
     }
 
     socketRef.current?.setActiveRoom(null)
     window.sessionStorage.removeItem(activeRoomKey)
     setRoom(null)
     setMessage('')
+    setMobilePanel(null)
+    setDesktopRailTab('scores')
+    setChatDraft('')
+    setUnreadChat(0)
     const nextUrl = new URL(window.location.href)
     nextUrl.searchParams.delete('room')
     window.history.replaceState(null, '', nextUrl)
   }
 
   return (
-    <main className="app-shell">
-      <header className="topbar" aria-label="Game header">
+    <main className={`app-shell ${room ? 'room-active' : ''}`}>
+      <header className={`topbar ${room ? 'match-topbar' : ''}`} aria-label="Game header">
         <a className="brand" href="/" onClick={(event) => event.preventDefault()}>
           <span className="brand-mark">XO</span>
           <span>
@@ -268,10 +432,28 @@ function App() {
             <small>private match room</small>
           </span>
         </a>
-        <div className={`connection ${connection}`}>
-          {connection === 'online' ? <Wifi size={18} /> : <WifiOff size={18} />}
-          <span>{connection}</span>
-        </div>
+
+        {room ? (
+          <>
+            <div className="mobile-room-tools">
+              <button className="mobile-room-code" type="button" onClick={copyInvite}>
+                {room.code}
+              </button>
+              <button
+                className="mobile-chat-trigger"
+                type="button"
+                onClick={openMobileChat}
+                aria-label={`Open chat${unreadChat ? `, ${unreadChat} unread` : ''}`}
+              >
+                <MessageCircle size={18} />
+                {unreadChat > 0 ? <span>{Math.min(unreadChat, 9)}</span> : null}
+              </button>
+            </div>
+            <ConnectionBadge connection={connection} className="desktop-room-connection" />
+          </>
+        ) : (
+          <ConnectionBadge connection={connection} />
+        )}
       </header>
 
       {!room ? (
@@ -394,7 +576,7 @@ function App() {
           </div>
         </section>
       ) : (
-        <section className="match-grid" aria-label={`Room ${room.code}`}>
+        <section className={`match-grid status-${room.status}`} aria-label={`Room ${room.code}`}>
           <aside className="room-panel">
             <div className="room-code">
               <span>Room</span>
@@ -464,97 +646,165 @@ function App() {
             </div>
           </aside>
 
-          <section className="board-stage">
-            <div className="match-status">
-              <span>{room.lastEvent}</span>
-              <h2>{winnerText(room)}</h2>
-              <p>
-                {room.config.mode === 'misere' ? 'Three in a row loses. ' : ''}
-                You are {markLabel(room.you.mark)}
-                {opponentMark ? ` against ${room.players[opponentMark]?.name ?? opponentMark}` : ''}
-              </p>
-            </div>
+          {room.status !== 'lobby' ? <MobileMatchSummary room={room} /> : null}
 
-            <div className={`board ${canPlay ? 'active-turn' : ''}`} role="grid">
-              {room.board.map((cell, index) => (
-                <button
-                  aria-label={`Cell ${index + 1}${cell ? ` ${cell}` : ''}`}
-                  className={[
-                    'cell',
-                    cell ? `mark-${cell.toLowerCase()}` : '',
-                    room.winningLine.includes(index) ? 'winning' : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  disabled={!canPlay || Boolean(cell)}
-                  key={index}
-                  type="button"
-                  onClick={() => emitRoomEvent('cell:play', { index })}
-                >
-                  {cell}
-                </button>
-              ))}
-            </div>
+          <section className={`board-stage ${room.status === 'lobby' ? 'lobby-stage' : ''}`}>
+            {room.status === 'lobby' ? (
+              <MobileLobbyCard
+                room={room}
+                copied={copied}
+                waiting={isWaitingForGuest}
+                onCopy={copyInvite}
+                onStart={() => emitRoomEvent('match:start')}
+                onChat={openMobileChat}
+              />
+            ) : null}
 
-            <div className="round-track" aria-label="Round track">
-              {Array.from({ length: room.config.totalRounds }, (_, index) => {
-                const round = room.rounds[index]
-                const active = index + 1 === room.currentRound && room.status === 'playing'
+            <div className={`board-live-content ${room.status === 'lobby' ? 'lobby-board-content' : ''}`}>
+              <div className="match-status">
+                <span>{room.lastEvent}</span>
+                <h2>{winnerText(room)}</h2>
+                <p>
+                  {room.config.mode === 'misere' ? 'Three in a row loses. ' : ''}
+                  You are {markLabel(room.you.mark)}
+                  {opponentMark
+                    ? ` against ${room.players[opponentMark]?.name ?? opponentMark}`
+                    : ''}
+                </p>
+              </div>
 
-                return (
-                  <span
+              {room.config.mode === 'misere' && room.status === 'playing' ? (
+                <div className="misere-warning">
+                  Reverse pressure · completing any line loses the round
+                </div>
+              ) : null}
+
+              <div className={`board ${canPlay ? 'active-turn' : ''}`} role="grid">
+                {room.board.map((cell, index) => (
+                  <button
+                    aria-label={`Cell ${index + 1}${cell ? ` ${cell}` : ''}`}
                     className={[
-                      'round-dot',
-                      active ? 'active' : '',
-                      round?.winner === 'X' ? 'x-win' : '',
-                      round?.winner === 'O' ? 'o-win' : '',
-                      round?.winner === 'draw' ? 'draw' : '',
+                      'cell',
+                      cell ? `mark-${cell.toLowerCase()}` : '',
+                      room.winningLine.includes(index)
+                        ? room.config.mode === 'misere'
+                          ? 'losing'
+                          : 'winning'
+                        : '',
                     ]
                       .filter(Boolean)
                       .join(' ')}
+                    disabled={!canPlay || Boolean(cell)}
                     key={index}
-                    title={round ? `Round ${round.round}: ${round.winner}` : `Round ${index + 1}`}
-                  />
-                )
-              })}
+                    type="button"
+                    onClick={() => emitRoomEvent('cell:play', { index })}
+                  >
+                    {cell}
+                  </button>
+                ))}
+              </div>
+
+              <div className="round-track" aria-label="Round track">
+                {Array.from({ length: room.config.totalRounds }, (_, index) => {
+                  const round = room.rounds[index]
+                  const active =
+                    index + 1 === room.currentRound && room.status === 'playing'
+
+                  return (
+                    <span
+                      className={[
+                        'round-dot',
+                        active ? 'active' : '',
+                        round?.winner === 'X' ? 'x-win' : '',
+                        round?.winner === 'O' ? 'o-win' : '',
+                        round?.winner === 'draw' ? 'draw' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      key={index}
+                      title={
+                        round ? `Round ${round.round}: ${round.winner}` : `Round ${index + 1}`
+                      }
+                    />
+                  )
+                })}
+              </div>
+              <div className="round-caption">
+                <span>
+                  Round {Math.min(room.currentRound, room.config.totalRounds)} of{' '}
+                  {room.config.totalRounds}
+                </span>
+                <span>{room.status === 'playing' ? 'Match in progress' : room.lastEvent}</span>
+              </div>
+
+              {room.status === 'roundOver' || room.status === 'matchOver' ? (
+                <div className="mobile-result-card">
+                  <strong>
+                    {room.status === 'matchOver'
+                      ? `${room.scores.X} – ${room.scores.O} final`
+                      : `Score ${room.scores.X} – ${room.scores.O}`}
+                  </strong>
+                  <small>
+                    {room.status === 'matchOver'
+                      ? 'The table is ready for a reset.'
+                      : 'The host controls the next round.'}
+                  </small>
+                </div>
+              ) : null}
             </div>
           </section>
 
-          <aside className="score-panel">
-            <div className="score-card lead">
-              <Trophy size={22} />
-              <span>Score</span>
-              <strong>
-                {room.scores.X} - {room.scores.O}
-              </strong>
-              <small>{room.scores.draws} draws</small>
-            </div>
+          <DesktopRail
+            room={room}
+            activeTab={desktopRailTab}
+            unreadChat={unreadChat}
+            chatDraft={chatDraft}
+            sendingChat={sendingChat}
+            clientId={clientIdRef.current}
+            onTab={openDesktopTab}
+            onDraft={setChatDraft}
+            onSend={sendChatMessage}
+          />
 
-            {(['X', 'O', 'draw'] as const).map((winner) => (
-              <div className="score-card" key={winner}>
-                <span>{winner === 'draw' ? 'Draws' : room.players[winner]?.name ?? winner}</span>
-                <strong>{scoreFor(room, winner)}</strong>
-              </div>
-            ))}
+          {room.status === 'roundOver' || room.status === 'matchOver' ? (
+            <MobileResultDock
+              room={room}
+              unreadChat={unreadChat}
+              onChat={openMobileChat}
+              onAdvance={() =>
+                emitRoomEvent(
+                  room.status === 'matchOver' ? 'match:reset' : 'round:next',
+                  room.status === 'matchOver' ? { totalRounds: rounds } : {},
+                )
+              }
+            />
+          ) : (
+            <MobileDock
+              activePanel={mobilePanel}
+              unreadChat={unreadChat}
+              onBoard={() => setMobilePanel(null)}
+              onScores={() => setMobilePanel('scores')}
+              onChat={openMobileChat}
+            />
+          )}
 
-            <div className="history-list">
-              <h3>Rounds</h3>
-              {room.rounds.length === 0 ? (
-                <p>No rounds finished yet.</p>
-              ) : (
-                room.rounds.map((round) => (
-                  <div className="history-item" key={round.round}>
-                    <span>R{round.round}</span>
-                    <strong>
-                      {round.winner === 'draw'
-                        ? 'Draw'
-                        : `${room.players[round.winner as Mark]?.name ?? round.winner}`}
-                    </strong>
-                  </div>
-                ))
-              )}
-            </div>
-          </aside>
+          <MobileSheet
+            panel={mobilePanel}
+            room={room}
+            communicationTab={communicationTab}
+            chatDraft={chatDraft}
+            sendingChat={sendingChat}
+            clientId={clientIdRef.current}
+            onClose={() => setMobilePanel(null)}
+            onCommunicationTab={(tab) => {
+              setCommunicationTab(tab)
+              if (tab === 'chat') {
+                setUnreadChat(0)
+              }
+            }}
+            onDraft={setChatDraft}
+            onSend={sendChatMessage}
+          />
         </section>
       )}
     </main>
@@ -578,6 +828,516 @@ function PlayerTile({
         {you ? 'You' : player?.connected ? 'Online' : player ? 'Disconnected' : 'Waiting'}
       </small>
     </div>
+  )
+}
+
+function ConnectionBadge({
+  connection,
+  className = '',
+}: {
+  connection: ConnectionState
+  className?: string
+}) {
+  return (
+    <div className={`connection ${connection} ${className}`.trim()}>
+      {connection === 'online' ? <Wifi size={18} /> : <WifiOff size={18} />}
+      <span>{connection}</span>
+    </div>
+  )
+}
+
+function MobileMatchSummary({ room }: { room: RoomState }) {
+  return (
+    <section className="mobile-match-summary" aria-label="Match summary">
+      <div className="mobile-room-summary">
+        <div>
+          <strong>Room {room.code}</strong>
+          <small>
+            Round {Math.min(room.currentRound, room.config.totalRounds)} of{' '}
+            {room.config.totalRounds} · {room.spectators.length} watching
+          </small>
+        </div>
+        <span>{room.config.mode === 'misere' ? 'Misère' : 'Normal'}</span>
+      </div>
+      <div className="mobile-player-score">
+        <div className="mobile-player">
+          <b>X</b>
+          <span>
+            <strong>{room.players.X?.name ?? 'Open seat'}</strong>
+            <small>{room.you.mark === 'X' ? 'You' : 'Crosses'}</small>
+          </span>
+        </div>
+        <strong className="mobile-score">
+          {room.scores.X} – {room.scores.O}
+        </strong>
+        <div className="mobile-player mobile-player-o">
+          <span>
+            <strong>{room.players.O?.name ?? 'Open seat'}</strong>
+            <small>{room.you.mark === 'O' ? 'You' : 'Noughts'}</small>
+          </span>
+          <b>O</b>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function MobileLobbyCard({
+  room,
+  copied,
+  waiting,
+  onCopy,
+  onStart,
+  onChat,
+}: {
+  room: RoomState
+  copied: boolean
+  waiting: boolean
+  onCopy: () => void
+  onStart: () => void
+  onChat: () => void
+}) {
+  return (
+    <div className="mobile-lobby-card">
+      <span className="eyebrow">Private match room</span>
+      <h1>Your table is ready.</h1>
+      <p>Share the code. The host starts when both seats are occupied.</p>
+
+      <div className="mobile-invite-code">
+        <div>
+          <span>Room code</span>
+          <strong>{room.code}</strong>
+        </div>
+        <button type="button" onClick={onCopy}>
+          {copied ? 'Copied' : 'Copy invite'}
+        </button>
+      </div>
+
+      <div className="mobile-lobby-players">
+        <div>
+          <b>X</b>
+          <strong>{room.players.X?.name ?? 'Open seat'}</strong>
+          <small>{room.you.mark === 'X' ? 'You · host' : 'Host'}</small>
+        </div>
+        <div className="mark-o">
+          <b>O</b>
+          <strong>{room.players.O?.name ?? 'Open seat'}</strong>
+          <small>{room.players.O?.connected ? 'Ready' : 'Waiting'}</small>
+        </div>
+      </div>
+
+      <div className="mobile-lobby-config">
+        <span>
+          <small>Rules</small>
+          <strong>
+            {room.config.mode === 'misere' ? 'Misère · three loses' : 'Normal · three wins'}
+          </strong>
+        </span>
+        <span>
+          <small>Match</small>
+          <strong>{room.config.totalRounds} rounds</strong>
+        </span>
+      </div>
+
+      {room.you.isHost ? (
+        <button
+          className="primary-action"
+          disabled={waiting}
+          type="button"
+          onClick={onStart}
+        >
+          <Play size={18} />
+          {waiting ? 'Waiting for guest' : 'Start match'}
+        </button>
+      ) : (
+        <p className="mobile-waiting-note">The host controls the match.</p>
+      )}
+      <button className="secondary-action" type="button" onClick={onChat}>
+        <MessageCircle size={17} />
+        Open room chat
+      </button>
+    </div>
+  )
+}
+
+function ScoreContent({ room }: { room: RoomState }) {
+  return (
+    <div className="score-content">
+      <div className="score-card lead">
+        <Trophy size={22} />
+        <span>Score</span>
+        <strong>
+          {room.scores.X} - {room.scores.O}
+        </strong>
+        <small>{room.scores.draws} draws</small>
+      </div>
+
+      <div className="score-breakdown">
+        {(['X', 'O', 'draw'] as const).map((winner) => (
+          <div className="score-card" key={winner}>
+            <span>{winner === 'draw' ? 'Draws' : room.players[winner]?.name ?? winner}</span>
+            <strong>{scoreFor(room, winner)}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div className="history-list">
+        <h3>Rounds</h3>
+        {room.rounds.length === 0 ? (
+          <p>No rounds finished yet.</p>
+        ) : (
+          room.rounds.map((round) => (
+            <div className="history-item" key={round.round}>
+              <span>R{round.round}</span>
+              <strong>
+                {round.winner === 'draw'
+                  ? 'Draw'
+                  : `${room.players[round.winner as Mark]?.name ?? round.winner}`}
+              </strong>
+              <small>
+                {round.completedBy && room.config.mode === 'misere'
+                  ? `${round.completedBy} made three`
+                  : `${round.board.filter(Boolean).length} moves`}
+              </small>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ChatContent({
+  room,
+  clientId,
+  draft,
+  sending,
+  onDraft,
+  onSend,
+}: {
+  room: RoomState
+  clientId: string
+  draft: string
+  sending: boolean
+  onDraft: (value: string) => void
+  onSend: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  return (
+    <div className="chat-content">
+      <div className="chat-role">
+        <span className="chat-role-badge">
+          {room.you.isSpectator ? 'Spectator · read only' : 'Player · can chat'}
+        </span>
+        <small>Messages leave with the room</small>
+      </div>
+
+      <div className="chat-messages" aria-live="polite">
+        {room.chatMessages.length === 0 ? (
+          <p className="empty-chat">No table talk yet. Keep it civil and strategic.</p>
+        ) : (
+          room.chatMessages.map((chatMessage) => {
+            const mine = chatMessage.senderId === clientId
+
+            return (
+              <article className={`chat-message ${mine ? 'mine' : ''}`} key={chatMessage.id}>
+                <span>
+                  {mine ? 'You' : chatMessage.senderName} · {formatTime(chatMessage.createdAt)}
+                </span>
+                <p>{chatMessage.body}</p>
+              </article>
+            )
+          })
+        )}
+      </div>
+
+      {room.you.isSpectator ? (
+        <p className="spectator-chat-note">
+          Spectators can follow the conversation but cannot send messages.
+        </p>
+      ) : (
+        <form className="chat-compose" onSubmit={onSend}>
+          <label>
+            <span className="sr-only">Message the table</span>
+            <textarea
+              maxLength={chatMessageLimit}
+              onChange={(event) => onDraft(event.target.value)}
+              placeholder="Message the table…"
+              rows={2}
+              value={draft}
+            />
+            <small>
+              {draft.length}/{chatMessageLimit}
+            </small>
+          </label>
+          <button
+            disabled={sending || !draft.trim()}
+            type="submit"
+            aria-label="Send message"
+          >
+            <Send size={18} />
+          </button>
+        </form>
+      )}
+    </div>
+  )
+}
+
+function GameLogContent({ room }: { room: RoomState }) {
+  return (
+    <div className="game-log" aria-live="polite">
+      {room.gameLog.length === 0 ? (
+        <p>No moves recorded yet.</p>
+      ) : (
+        [...room.gameLog].reverse().map((entry, index) => (
+          <div className="game-log-entry" key={entry.id}>
+            <span>{String(room.gameLog.length - index).padStart(2, '0')}</span>
+            <strong>{entry.text}</strong>
+            <time dateTime={entry.createdAt}>{formatTime(entry.createdAt)}</time>
+          </div>
+        ))
+      )}
+    </div>
+  )
+}
+
+function DesktopRail({
+  room,
+  activeTab,
+  unreadChat,
+  chatDraft,
+  sendingChat,
+  clientId,
+  onTab,
+  onDraft,
+  onSend,
+}: {
+  room: RoomState
+  activeTab: DesktopRailTab
+  unreadChat: number
+  chatDraft: string
+  sendingChat: boolean
+  clientId: string
+  onTab: (tab: DesktopRailTab) => void
+  onDraft: (value: string) => void
+  onSend: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  return (
+    <aside className="score-panel">
+      <div className="rail-tabs" role="tablist" aria-label="Match rail">
+        <button
+          className={activeTab === 'scores' ? 'active' : ''}
+          role="tab"
+          aria-selected={activeTab === 'scores'}
+          type="button"
+          onClick={() => onTab('scores')}
+        >
+          Score
+        </button>
+        <button
+          className={activeTab === 'chat' ? 'active' : ''}
+          role="tab"
+          aria-selected={activeTab === 'chat'}
+          type="button"
+          onClick={() => onTab('chat')}
+        >
+          Chat {unreadChat > 0 ? <span>{Math.min(unreadChat, 9)}</span> : null}
+        </button>
+        <button
+          className={activeTab === 'log' ? 'active' : ''}
+          role="tab"
+          aria-selected={activeTab === 'log'}
+          type="button"
+          onClick={() => onTab('log')}
+        >
+          Log
+        </button>
+      </div>
+
+      {activeTab === 'scores' ? <ScoreContent room={room} /> : null}
+      {activeTab === 'chat' ? (
+        <ChatContent
+          room={room}
+          clientId={clientId}
+          draft={chatDraft}
+          sending={sendingChat}
+          onDraft={onDraft}
+          onSend={onSend}
+        />
+      ) : null}
+      {activeTab === 'log' ? <GameLogContent room={room} /> : null}
+    </aside>
+  )
+}
+
+function MobileDock({
+  activePanel,
+  unreadChat,
+  onBoard,
+  onScores,
+  onChat,
+}: {
+  activePanel: MobilePanel
+  unreadChat: number
+  onBoard: () => void
+  onScores: () => void
+  onChat: () => void
+}) {
+  return (
+    <nav className="mobile-dock" aria-label="Match tools">
+      <button
+        className={activePanel === null ? 'active' : ''}
+        type="button"
+        onClick={onBoard}
+      >
+        <Grid3X3 size={19} />
+        <span>Board</span>
+      </button>
+      <button
+        className={activePanel === 'scores' ? 'active' : ''}
+        type="button"
+        onClick={onScores}
+      >
+        <BarChart3 size={19} />
+        <span>Score</span>
+      </button>
+      <button
+        className={activePanel === 'chat' ? 'active' : ''}
+        type="button"
+        onClick={onChat}
+      >
+        <MessageCircle size={19} />
+        <span>Chat</span>
+        {unreadChat > 0 ? <b>{Math.min(unreadChat, 9)}</b> : null}
+      </button>
+    </nav>
+  )
+}
+
+function MobileResultDock({
+  room,
+  unreadChat,
+  onChat,
+  onAdvance,
+}: {
+  room: RoomState
+  unreadChat: number
+  onChat: () => void
+  onAdvance: () => void
+}) {
+  const actionLabel = room.status === 'matchOver' ? 'Reset table' : 'Next round'
+
+  return (
+    <div className="mobile-result-dock">
+      <button className="secondary-action" type="button" onClick={onChat}>
+        <MessageCircle size={17} />
+        Chat {unreadChat > 0 ? `· ${Math.min(unreadChat, 9)}` : ''}
+      </button>
+      <button
+        className="primary-action"
+        disabled={!room.you.isHost}
+        type="button"
+        onClick={onAdvance}
+      >
+        {room.status === 'matchOver' ? <RotateCcw size={17} /> : <Play size={17} />}
+        {room.you.isHost ? actionLabel : 'Waiting for host'}
+      </button>
+    </div>
+  )
+}
+
+function MobileSheet({
+  panel,
+  room,
+  communicationTab,
+  chatDraft,
+  sendingChat,
+  clientId,
+  onClose,
+  onCommunicationTab,
+  onDraft,
+  onSend,
+}: {
+  panel: MobilePanel
+  room: RoomState
+  communicationTab: CommunicationTab
+  chatDraft: string
+  sendingChat: boolean
+  clientId: string
+  onClose: () => void
+  onCommunicationTab: (tab: CommunicationTab) => void
+  onDraft: (value: string) => void
+  onSend: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  if (!panel) {
+    return null
+  }
+
+  return (
+    <>
+      <button
+        className="mobile-sheet-scrim"
+        type="button"
+        onClick={onClose}
+        aria-label="Close panel"
+      />
+      <section className={`mobile-sheet mobile-sheet-${panel}`}>
+        <span className="mobile-sheet-handle" aria-hidden="true" />
+        <header className="mobile-sheet-heading">
+          <div>
+            <h2>{panel === 'scores' ? 'Match ledger' : 'Table talk'}</h2>
+            <p>
+              {panel === 'scores'
+                ? `${room.config.mode === 'misere' ? 'Misère' : 'Normal'} rules · round ${Math.min(room.currentRound, room.config.totalRounds)} of ${room.config.totalRounds}`
+                : `Room ${room.code} · messages disappear with the room`}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close panel">
+            <XIcon size={19} />
+          </button>
+        </header>
+
+        {panel === 'scores' ? <ScoreContent room={room} /> : null}
+
+        {panel === 'chat' ? (
+          <>
+            <div className="communication-tabs" role="tablist">
+              <button
+                className={communicationTab === 'chat' ? 'active' : ''}
+                role="tab"
+                aria-selected={communicationTab === 'chat'}
+                type="button"
+                onClick={() => onCommunicationTab('chat')}
+              >
+                <MessageCircle size={16} />
+                Chat
+              </button>
+              <button
+                className={communicationTab === 'log' ? 'active' : ''}
+                role="tab"
+                aria-selected={communicationTab === 'log'}
+                type="button"
+                onClick={() => onCommunicationTab('log')}
+              >
+                <ListOrdered size={16} />
+                Game log
+              </button>
+            </div>
+            {communicationTab === 'chat' ? (
+              <ChatContent
+                room={room}
+                clientId={clientId}
+                draft={chatDraft}
+                sending={sendingChat}
+                onDraft={onDraft}
+                onSend={onSend}
+              />
+            ) : (
+              <GameLogContent room={room} />
+            )}
+          </>
+        ) : null}
+      </section>
+    </>
   )
 }
 

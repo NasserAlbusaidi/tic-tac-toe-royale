@@ -2,8 +2,13 @@
 
 Browser Tic Tac Toe with private rooms, live play, Normal or Misère rules,
 reconnect-safe player sessions, configurable rounds, spectators, scoring, and
-round history. In Misère mode, the player who makes three in a row loses the
-round.
+round history. The mobile-first table includes player chat, a separate game
+log, and spectator read-only chat. In Misère mode, the player who makes three
+in a row loses the round.
+
+Player, host, and spectator reconnection uses private server-issued resume
+tokens. Only token hashes are stored with Redis room state; public room payloads
+never include the credential.
 
 ## Architecture
 

@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
+  appendChatMessage,
   applyMove,
   assignParticipant,
+  CHAT_MESSAGE_LIMIT,
   createRoom,
   detectWinner,
   nextRound,
   normalizeGameMode,
+  publicRoom,
   resetMatch,
+  ROOM_CHAT_HISTORY_LIMIT,
   startMatch,
 } from '../server/game-engine.mjs'
 
@@ -182,5 +186,77 @@ describe('game engine', () => {
     expect(room.players.O.id).toBe('guest-player')
     expect(room.players.O.name).toBe('Guest restored')
     expect(lateJoiner).toEqual({ role: 'spectator', mark: null })
+  })
+
+  it('stores trimmed room chat with server-derived player identity', () => {
+    const room = liveRoom()
+    const sent = appendChatMessage(room, 'host-socket', '  Good move.  ', {
+      id: 'message-1',
+      createdAt: '2026-07-30T12:00:00.000Z',
+    })
+
+    expect(sent).toEqual({
+      ok: true,
+      message: {
+        id: 'message-1',
+        senderId: 'host-socket',
+        senderName: 'Host',
+        body: 'Good move.',
+        createdAt: '2026-07-30T12:00:00.000Z',
+      },
+    })
+    expect(publicRoom(room, 'guest-socket').chatMessages).toEqual([sent.message])
+  })
+
+  it('rejects empty, oversized, and spectator chat messages', () => {
+    const room = liveRoom()
+    assignParticipant(room, {
+      clientId: 'spectator-client',
+      name: 'Watcher',
+    })
+
+    expect(appendChatMessage(room, 'host-socket', '   ')).toEqual({
+      ok: false,
+      error: 'Write a message before sending.',
+    })
+    expect(
+      appendChatMessage(room, 'host-socket', 'x'.repeat(CHAT_MESSAGE_LIMIT + 1)),
+    ).toEqual({
+      ok: false,
+      error: `Messages can be at most ${CHAT_MESSAGE_LIMIT} characters.`,
+    })
+    expect(appendChatMessage(room, 'spectator-client', 'Hello')).toEqual({
+      ok: false,
+      error: 'Spectators can read chat but cannot send messages.',
+    })
+  })
+
+  it('retains only the latest room chat history', () => {
+    const room = liveRoom()
+
+    for (let index = 0; index < ROOM_CHAT_HISTORY_LIMIT + 3; index += 1) {
+      appendChatMessage(room, 'host-socket', `Message ${index}`, {
+        id: `message-${index}`,
+        createdAt: `2026-07-30T12:00:${String(index).padStart(2, '0')}.000Z`,
+      })
+    }
+
+    expect(room.chatMessages).toHaveLength(ROOM_CHAT_HISTORY_LIMIT)
+    expect(room.chatMessages[0].body).toBe('Message 3')
+    expect(room.chatMessages.at(-1).body).toBe(
+      `Message ${ROOM_CHAT_HISTORY_LIMIT + 2}`,
+    )
+  })
+
+  it('records match events separately from player chat', () => {
+    const room = liveRoom()
+
+    applyMove(room, 'host-socket', 0)
+    appendChatMessage(room, 'guest-socket', 'Your turn.', {
+      id: 'message-1',
+    })
+
+    expect(room.gameLog.at(-1).text).toBe('Host placed X in cell 1.')
+    expect(room.gameLog.some((entry) => entry.text === 'Your turn.')).toBe(false)
   })
 })
