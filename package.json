@@ -2,6 +2,7 @@
   "name": "tic-tac-toe-royale",
   "private": true,
   "version": "1.0.0",
+  "license": "MIT",
   "description": "Real-time Normal, Misère, and Ultimate Tic Tac Toe for private browser rooms.",
   "homepage": "https://tic-tac-toe-royale.vercel.app/",
   "repository": {

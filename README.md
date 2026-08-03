@@ -174,5 +174,8 @@ protocol impact can be agreed before implementation.
 
 ## License
 
-A software license has not yet been selected. Until one is added, the source is
-available for viewing but no reuse rights are granted by default.
+The source code is available under the [MIT License](LICENSE).
+
+The license covers the software in this repository. It does not grant access
+to or ownership of the live XO Royale deployment, Vercel project, domain,
+Redis data, or private credentials.
