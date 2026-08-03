@@ -1,0 +1,51 @@
+name: Bug report
+description: Report a reproducible gameplay, room, chat, or interface problem.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve XO Royale. Do not include credentials or private room messages.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observed and expected behavior.
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Game mode
+      options:
+        - Normal
+        - Misère
+        - Ultimate
+        - Lobby, chat, or spectator flow
+        - Not mode-specific
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Create a room...
+        2. Join as...
+        3. Play...
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and device
+      placeholder: Chrome 140 on Android, Safari on iPhone, Firefox on Windows...
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed room codes, chat content, credentials, and personal information.
+          required: true

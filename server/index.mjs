@@ -10,8 +10,13 @@ const __dirname = path.dirname(__filename)
 const rootDir = path.resolve(__dirname, '..')
 const distDir = path.join(rootDir, 'dist')
 const port = Number.parseInt(process.env.PORT ?? '4242', 10)
-const host = process.env.HOST ?? '127.0.0.1'
-const isProduction = process.env.NODE_ENV === 'production'
+const hostArgument = process.argv.indexOf('--host')
+const host =
+  (hostArgument >= 0 ? process.argv[hostArgument + 1] : null) ??
+  process.env.HOST ??
+  '127.0.0.1'
+const isProduction =
+  process.env.NODE_ENV === 'production' || process.argv.includes('--production')
 
 const app = express()
 const httpServer = createServer(app)

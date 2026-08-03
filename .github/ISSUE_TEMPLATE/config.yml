@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Play XO Royale
+    url: https://tic-tac-toe-royale.vercel.app/
+    about: Open the live game before reporting a production issue.
+  - name: Private security report
+    url: https://github.com/NasserAlbusaidi/tic-tac-toe-royale/security/advisories/new
+    about: Report vulnerabilities privately instead of opening an issue.
