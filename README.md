@@ -5,7 +5,7 @@
 <h1 align="center">XO Royale</h1>
 
 <p align="center">
-  A polished, real-time Tic Tac Toe table for private matches with friends.
+  A polished, real-time table for Tic Tac Toe and Connect Four with friends.
 </p>
 
 <p align="center">
@@ -30,13 +30,14 @@
 
 ## What is XO Royale?
 
-XO Royale turns Tic Tac Toe into a private browser table. Create a room, share
-the five-character code, and play from any modern browser—no account required.
+XO Royale turns classic grid games into a private browser table. Create a room,
+share the five-character code, and play from any modern browser—no account
+required.
 
 It includes:
 
 - real-time private rooms for two players;
-- Normal, Misère, and Ultimate Tic Tac Toe;
+- Normal, Misère, and Ultimate Tic Tac Toe plus Connect Four;
 - configurable best-of match lengths with scores and round history;
 - mobile-first controls without sacrificing the desktop table;
 - player chat, unread badges, a separate game log, and read-only spectators;
@@ -50,6 +51,7 @@ It includes:
 | **Normal** | Make three marks in a row to win the round. |
 | **Misère** | Making three in a row loses the round. |
 | **Ultimate** | Win small boards to claim the 3×3 meta grid. The cell you choose sends your opponent to the matching small board; if that board is closed, they may play anywhere. |
+| **Connect Four** | Drop discs into a 7-column board. The first player to connect four horizontally, vertically, or diagonally wins. |
 
 Ultimate moves use `board.cell` notation. For example, `5.3` means board 5,
 cell 3, and sends the next player to board 3.
@@ -133,8 +135,9 @@ You can also target a deployed environment:
 npm run smoke -- --url wss://your-project.vercel.app/api/ws
 ```
 
-The smoke test creates two temporary players, starts an Ultimate match, and
-verifies the `5.3 → board 3 → 3.1 → board 1` routing flow.
+The smoke test creates two temporary players, verifies the Ultimate
+`5.3 → board 3 → 3.1 → board 1` routing flow, then plays a complete Connect
+Four round through the same room protocol.
 
 ## Deploy to Vercel
 
