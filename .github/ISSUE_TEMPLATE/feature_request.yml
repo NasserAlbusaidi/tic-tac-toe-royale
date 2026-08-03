@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest a focused improvement to gameplay or the table experience.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What would this improve for players, hosts, or spectators?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful version of the change.
+    validations:
+      required: true
+  - type: textarea
+    id: protocol
+    attributes:
+      label: Gameplay or protocol impact
+      description: Note any effect on game rules, room state, reconnects, chat, or spectators.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: I checked existing issues for a similar request.
+          required: true

@@ -1,26 +1,51 @@
 {
   "name": "tic-tac-toe-royale",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "license": "MIT",
+  "description": "Real-time Normal, Misère, and Ultimate Tic Tac Toe for private browser rooms.",
+  "homepage": "https://tic-tac-toe-royale.vercel.app/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NasserAlbusaidi/tic-tac-toe-royale.git"
+  },
+  "bugs": {
+    "url": "https://github.com/NasserAlbusaidi/tic-tac-toe-royale/issues"
+  },
+  "keywords": [
+    "tic-tac-toe",
+    "ultimate-tic-tac-toe",
+    "misere",
+    "multiplayer",
+    "websocket",
+    "react",
+    "vite"
+  ],
   "type": "module",
+  "packageManager": "npm@11.16.0",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
-    "dev": "concurrently -k -n server,client -c cyan,magenta \"node server/index.mjs\" \"vite --host 127.0.0.1\"",
-    "dev:network": "HOST=0.0.0.0 VITE_HOST=0.0.0.0 concurrently -k -n server,client -c cyan,magenta \"node server/index.mjs\" \"vite --host 0.0.0.0\"",
-    "server": "node server/index.mjs",
+    "dev": "concurrently -k -n server,client -c cyan,magenta \"node --env-file-if-exists=.env.local server/index.mjs\" \"vite --host 127.0.0.1\"",
+    "dev:network": "concurrently -k -n server,client -c cyan,magenta \"node --env-file-if-exists=.env.local server/index.mjs --host 0.0.0.0\" \"vite --host 0.0.0.0\"",
+    "server": "node --env-file-if-exists=.env.local server/index.mjs",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "vitest run",
-    "check": "npm run lint && npm run test && npm run build && node --check server/index.mjs && node --check server/game-engine.mjs",
-    "preview": "NODE_ENV=production node server/index.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "check": "npm run lint && npm run test && npm run build && node --check server/index.mjs && node --check server/game-engine.mjs && node --check server/room-store.mjs && node --check server/socket-hub.mjs && node --check api/ws.mjs && node --check api/health.mjs && node --check scripts/smoke.mjs",
+    "preview": "npm run build && node --env-file-if-exists=.env.local server/index.mjs --production"
   },
   "dependencies": {
+    "@vercel/functions": "^3.7.6",
     "express": "^5.2.1",
+    "ioredis": "^5.11.1",
     "lucide-react": "^1.22.0",
     "nanoid": "^5.1.16",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "socket.io": "^4.8.3",
-    "socket.io-client": "^4.8.3"
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
@@ -31,7 +56,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
-    "concurrently": "^10.0.3",
+    "concurrently": "^10.0.4",
     "jsdom": "^29.1.1",
     "oxlint": "^1.69.0",
     "typescript": "~6.0.2",

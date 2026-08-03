@@ -31,15 +31,17 @@
 
 html {
   min-height: 100%;
+  overflow-x: hidden;
   background:
     linear-gradient(122deg, rgba(23, 63, 54, 0.9), rgba(16, 16, 14, 0.94) 45%, rgba(75, 48, 34, 0.72)),
     var(--ink);
 }
 
 body {
-  min-width: 320px;
+  min-width: 0;
   min-height: 100svh;
   margin: 0;
+  overflow-x: hidden;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 34%),
     transparent;
@@ -52,6 +54,7 @@ input {
 
 button:focus-visible,
 input:focus-visible,
+textarea:focus-visible,
 a:focus-visible {
   outline: 3px solid rgba(103, 217, 197, 0.7);
   outline-offset: 3px;
