@@ -135,6 +135,63 @@ describe('socket hub', () => {
     )).toBe(true)
   })
 
+  it('carries Ultimate board.cell moves through the authenticated room protocol', async () => {
+    hub = createSocketHub({
+      store: createMemoryRoomStore(),
+      instanceId: 'test-instance',
+    })
+    const host = new FakeSocket()
+    const guest = new FakeSocket()
+    hub.register(host)
+    hub.register(guest)
+
+    const created = await request(host, 'create-ultimate', 'room:create', {
+      clientId: 'ultimate-host-123',
+      name: 'Host',
+      totalRounds: 1,
+      gameMode: 'ultimate',
+    })
+    const roomCode = created.payload.room.code
+    expect(created.payload.room.config.mode).toBe('ultimate')
+    expect(created.payload.room.ultimate.boards).toHaveLength(9)
+
+    await request(guest, 'join-ultimate', 'room:join', {
+      clientId: 'ultimate-guest-456',
+      name: 'Guest',
+      roomCode,
+    })
+    await request(host, 'start-ultimate', 'match:start', { roomCode })
+
+    const firstMove = await request(host, 'move-ultimate-1', 'cell:play', {
+      roomCode,
+      boardIndex: 4,
+      index: 2,
+    })
+    expect(firstMove.payload.room.ultimate.boards[4][2]).toBe('X')
+    expect(firstMove.payload.room.ultimate.targetBoard).toBe(2)
+    expect(firstMove.payload.room.gameLog.at(-1).text).toBe(
+      'Host placed X at 5.3.',
+    )
+
+    const wrongBoard = await request(guest, 'move-ultimate-wrong', 'cell:play', {
+      roomCode,
+      boardIndex: 0,
+      index: 0,
+    })
+    expect(wrongBoard.payload).toEqual({
+      ok: false,
+      error: 'You must play in board 3.',
+    })
+
+    const routedMove = await request(guest, 'move-ultimate-2', 'cell:play', {
+      roomCode,
+      boardIndex: 2,
+      index: 0,
+    })
+    expect(routedMove.payload.room.ultimate.boards[2][0]).toBe('O')
+    expect(routedMove.payload.room.ultimate.targetBoard).toBe(0)
+  })
+
   it('lets spectators read room chat but rejects sending', async () => {
     hub = createSocketHub({
       store: createMemoryRoomStore(),

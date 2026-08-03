@@ -338,7 +338,7 @@ export function createSocketHub({
           break
         case 'cell:play':
           await mutateGameRoom(socket, session, payload, message.requestId, (room, clientId) =>
-            applyMove(room, clientId, payload.index),
+            applyMove(room, clientId, payload.index, payload.boardIndex),
           )
           break
         case 'round:next':

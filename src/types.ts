@@ -1,7 +1,15 @@
 export type Mark = 'X' | 'O'
-export type GameMode = 'normal' | 'misere'
+export type GameMode = 'normal' | 'misere' | 'ultimate'
 export type Winner = Mark | 'draw' | null
 export type RoomStatus = 'lobby' | 'playing' | 'roundOver' | 'matchOver'
+
+export type UltimateClaim = Mark | 'draw' | null
+
+export type UltimateState = {
+  boards: (Mark | null)[][]
+  claims: UltimateClaim[]
+  targetBoard: number | null
+}
 
 export type PlayerState = {
   id: string
@@ -18,6 +26,8 @@ export type RoundSummary = {
   line: number[]
   starter: Mark
   board: (Mark | null)[]
+  ultimate: UltimateState | null
+  moves: number
   endedAt: string
 }
 
@@ -43,6 +53,7 @@ export type RoomState = {
   }
   status: RoomStatus
   board: (Mark | null)[]
+  ultimate: UltimateState | null
   turn: Mark
   starter: Mark
   winner: Winner

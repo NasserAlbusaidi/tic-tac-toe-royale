@@ -58,6 +58,40 @@ function markLabel(mark: Mark | null) {
   return mark === 'X' ? 'Crosses' : 'Noughts'
 }
 
+function modeLabel(mode: GameMode) {
+  if (mode === 'misere') {
+    return 'Misère'
+  }
+
+  if (mode === 'ultimate') {
+    return 'Ultimate'
+  }
+
+  return 'Normal'
+}
+
+function modeSummary(mode: GameMode) {
+  if (mode === 'misere') {
+    return 'Misère · three loses'
+  }
+
+  if (mode === 'ultimate') {
+    return 'Ultimate · claim three boards'
+  }
+
+  return 'Normal · three wins'
+}
+
+function ultimateBoardIsPlayable(room: RoomState, boardIndex: number) {
+  const ultimate = room.ultimate
+
+  return Boolean(
+    ultimate &&
+      ultimate.claims[boardIndex] === null &&
+      ultimate.boards[boardIndex]?.some((cell) => cell === null),
+  )
+}
+
 function winnerText(room: RoomState) {
   if (room.status === 'matchOver') {
     if (room.matchWinner === 'draw') {
@@ -461,7 +495,7 @@ function App() {
           <div className="welcome-copy">
             <span className="eyebrow">Browser table</span>
             <h1>Play a sharper Tic Tac Toe match.</h1>
-            <p>Private table. Classic or Misère rules. Every move visible.</p>
+            <p>Private table. Classic, Misère, or Ultimate rules. Every move visible.</p>
           </div>
 
           <div className="setup-panel">
@@ -515,6 +549,14 @@ function App() {
                     >
                       <span>Misère</span>
                       <small>Make three, lose</small>
+                    </button>
+                    <button
+                      className={gameMode === 'ultimate' ? 'active' : ''}
+                      type="button"
+                      onClick={() => setGameMode('ultimate')}
+                    >
+                      <span>Ultimate</span>
+                      <small>Claim three boards</small>
                     </button>
                   </div>
                 </fieldset>
@@ -593,7 +635,7 @@ function App() {
             </div>
 
             <div className="meta-strip">
-              <span>{room.config.mode === 'misere' ? 'Misère rules' : 'Normal rules'}</span>
+              <span>{modeLabel(room.config.mode)} rules</span>
               <span>
                 {room.config.totalRounds}{' '}
                 {room.config.totalRounds === 1 ? 'round' : 'rounds'}
@@ -666,6 +708,9 @@ function App() {
                 <h2>{winnerText(room)}</h2>
                 <p>
                   {room.config.mode === 'misere' ? 'Three in a row loses. ' : ''}
+                  {room.config.mode === 'ultimate'
+                    ? 'Claim three small boards in a row. '
+                    : ''}
                   You are {markLabel(room.you.mark)}
                   {opponentMark
                     ? ` against ${room.players[opponentMark]?.name ?? opponentMark}`
@@ -679,30 +724,50 @@ function App() {
                 </div>
               ) : null}
 
-              <div className={`board ${canPlay ? 'active-turn' : ''}`} role="grid">
-                {room.board.map((cell, index) => (
-                  <button
-                    aria-label={`Cell ${index + 1}${cell ? ` ${cell}` : ''}`}
-                    className={[
-                      'cell',
-                      cell ? `mark-${cell.toLowerCase()}` : '',
-                      room.winningLine.includes(index)
-                        ? room.config.mode === 'misere'
-                          ? 'losing'
-                          : 'winning'
-                        : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    disabled={!canPlay || Boolean(cell)}
-                    key={index}
-                    type="button"
-                    onClick={() => emitRoomEvent('cell:play', { index })}
-                  >
-                    {cell}
-                  </button>
-                ))}
-              </div>
+              {room.config.mode === 'ultimate' && room.status === 'playing' ? (
+                <div className="ultimate-guidance">
+                  {room.ultimate?.targetBoard !== null &&
+                  room.ultimate?.targetBoard !== undefined &&
+                  ultimateBoardIsPlayable(room, room.ultimate.targetBoard)
+                    ? `Target board ${room.ultimate.targetBoard + 1} · moves use board.cell`
+                    : 'Open move · choose any unfinished board'}
+                </div>
+              ) : null}
+
+              {room.config.mode === 'ultimate' ? (
+                <UltimateBoard
+                  room={room}
+                  canPlay={canPlay}
+                  onPlay={(boardIndex, index) =>
+                    emitRoomEvent('cell:play', { boardIndex, index })
+                  }
+                />
+              ) : (
+                <div className={`board ${canPlay ? 'active-turn' : ''}`} role="grid">
+                  {room.board.map((cell, index) => (
+                    <button
+                      aria-label={`Cell ${index + 1}${cell ? ` ${cell}` : ''}`}
+                      className={[
+                        'cell',
+                        cell ? `mark-${cell.toLowerCase()}` : '',
+                        room.winningLine.includes(index)
+                          ? room.config.mode === 'misere'
+                            ? 'losing'
+                            : 'winning'
+                          : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      disabled={!canPlay || Boolean(cell)}
+                      key={index}
+                      type="button"
+                      onClick={() => emitRoomEvent('cell:play', { index })}
+                    >
+                      {cell}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               <div className="round-track" aria-label="Round track">
                 {Array.from({ length: room.config.totalRounds }, (_, index) => {
@@ -811,6 +876,86 @@ function App() {
   )
 }
 
+function UltimateBoard({
+  room,
+  canPlay,
+  onPlay,
+}: {
+  room: RoomState
+  canPlay: boolean
+  onPlay: (boardIndex: number, index: number) => void
+}) {
+  const ultimate = room.ultimate
+
+  if (!ultimate) {
+    return <p className="system-message">Ultimate board state is unavailable.</p>
+  }
+
+  const targetBoard =
+    ultimate.targetBoard !== null &&
+    ultimateBoardIsPlayable(room, ultimate.targetBoard)
+      ? ultimate.targetBoard
+      : null
+
+  return (
+    <div
+      className={`ultimate-board ${canPlay ? 'active-turn' : ''}`}
+      role="group"
+      aria-label="Ultimate Tic Tac Toe board"
+    >
+      {ultimate.boards.map((board, boardIndex) => {
+        const claim = ultimate.claims[boardIndex]
+        const playable = ultimateBoardIsPlayable(room, boardIndex)
+        const available = playable && (targetBoard === null || targetBoard === boardIndex)
+
+        return (
+          <section
+            aria-label={`Board ${boardIndex + 1}${claim ? ` claimed ${claim}` : ''}`}
+            className={[
+              'ultimate-mini-board',
+              available ? 'available' : '',
+              targetBoard === boardIndex ? 'target-board' : '',
+              claim === 'X' ? 'claimed-x' : '',
+              claim === 'O' ? 'claimed-o' : '',
+              claim === 'draw' ? 'claimed-draw' : '',
+              room.winningLine.includes(boardIndex) ? 'ultimate-winning' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            key={boardIndex}
+          >
+            <span className="ultimate-board-number">{boardIndex + 1}</span>
+            <div className="ultimate-mini-grid" role="grid">
+              {board.map((cell, index) => (
+                <button
+                  aria-label={`Board ${boardIndex + 1}, cell ${index + 1}${cell ? `, ${cell}` : ''}`}
+                  className={[
+                    'ultimate-cell',
+                    cell ? `mark-${cell.toLowerCase()}` : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  disabled={!canPlay || !available || Boolean(cell)}
+                  key={index}
+                  type="button"
+                  onClick={() => onPlay(boardIndex, index)}
+                >
+                  {cell ?? <span>{index + 1}</span>}
+                </button>
+              ))}
+            </div>
+            {claim ? (
+              <span className="ultimate-claim" aria-hidden="true">
+                {claim === 'draw' ? '—' : claim}
+              </span>
+            ) : null}
+          </section>
+        )
+      })}
+    </div>
+  )
+}
+
 function PlayerTile({
   mark,
   player,
@@ -857,7 +1002,7 @@ function MobileMatchSummary({ room }: { room: RoomState }) {
             {room.config.totalRounds} · {room.spectators.length} watching
           </small>
         </div>
-        <span>{room.config.mode === 'misere' ? 'Misère' : 'Normal'}</span>
+        <span>{modeLabel(room.config.mode)}</span>
       </div>
       <div className="mobile-player-score">
         <div className="mobile-player">
@@ -930,12 +1075,15 @@ function MobileLobbyCard({
         <span>
           <small>Rules</small>
           <strong>
-            {room.config.mode === 'misere' ? 'Misère · three loses' : 'Normal · three wins'}
+            {modeSummary(room.config.mode)}
           </strong>
         </span>
         <span>
           <small>Match</small>
-          <strong>{room.config.totalRounds} rounds</strong>
+          <strong>
+            {room.config.totalRounds}{' '}
+            {room.config.totalRounds === 1 ? 'round' : 'rounds'}
+          </strong>
         </span>
       </div>
 
@@ -997,7 +1145,7 @@ function ScoreContent({ room }: { room: RoomState }) {
               <small>
                 {round.completedBy && room.config.mode === 'misere'
                   ? `${round.completedBy} made three`
-                  : `${round.board.filter(Boolean).length} moves`}
+                  : `${round.moves} moves`}
               </small>
             </div>
           ))
@@ -1287,7 +1435,7 @@ function MobileSheet({
             <h2>{panel === 'scores' ? 'Match ledger' : 'Table talk'}</h2>
             <p>
               {panel === 'scores'
-                ? `${room.config.mode === 'misere' ? 'Misère' : 'Normal'} rules · round ${Math.min(room.currentRound, room.config.totalRounds)} of ${room.config.totalRounds}`
+                ? `${modeLabel(room.config.mode)} rules · round ${Math.min(room.currentRound, room.config.totalRounds)} of ${room.config.totalRounds}`
                 : `Room ${room.code} · messages disappear with the room`}
             </p>
           </div>

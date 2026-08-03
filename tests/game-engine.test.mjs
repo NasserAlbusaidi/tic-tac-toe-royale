@@ -5,6 +5,7 @@ import {
   assignParticipant,
   CHAT_MESSAGE_LIMIT,
   createRoom,
+  detectUltimateWinner,
   detectWinner,
   nextRound,
   normalizeGameMode,
@@ -28,6 +29,21 @@ function liveRoom(totalRounds = 3) {
   return room
 }
 
+function liveUltimateRoom(totalRounds = 1) {
+  const room = createRoom({
+    hostId: 'host-socket',
+    hostName: 'Host',
+    totalRounds,
+    gameMode: 'ultimate',
+    roomCode: 'ULTI1',
+  })
+
+  assignParticipant(room, { clientId: 'guest-socket', name: 'Guest' })
+  startMatch(room, 'host-socket')
+
+  return room
+}
+
 describe('game engine', () => {
   it('detects wins and draws', () => {
     expect(detectWinner(['X', 'X', 'X', null, null, null, null, null, null])).toEqual({
@@ -42,10 +58,85 @@ describe('game engine', () => {
 
   it('normalizes room modes and defaults to normal play', () => {
     expect(normalizeGameMode('misere')).toBe('misere')
+    expect(normalizeGameMode('ultimate')).toBe('ultimate')
     expect(normalizeGameMode('unknown')).toBe('normal')
     expect(createRoom({ hostId: 'host-socket', roomCode: 'TEST4' }).config.mode).toBe(
       'normal',
     )
+  })
+
+  it('creates nine numbered boards for Ultimate play', () => {
+    const room = liveUltimateRoom()
+    const publicState = publicRoom(room, 'host-socket')
+
+    expect(room.ultimate.boards).toHaveLength(9)
+    expect(room.ultimate.boards.every((board) => board.length === 9)).toBe(true)
+    expect(room.ultimate.claims).toEqual(Array(9).fill(null))
+    expect(room.ultimate.targetBoard).toBeNull()
+    publicState.ultimate.boards[0][0] = 'X'
+    expect(room.ultimate.boards[0][0]).toBeNull()
+  })
+
+  it('routes an Ultimate move to its cell board and rejects other boards', () => {
+    const room = liveUltimateRoom()
+
+    expect(applyMove(room, 'host-socket', 2, 4)).toEqual({ ok: true })
+    expect(room.ultimate.boards[4][2]).toBe('X')
+    expect(room.ultimate.targetBoard).toBe(2)
+    expect(applyMove(room, 'guest-socket', 0, 0)).toEqual({
+      ok: false,
+      error: 'You must play in board 3.',
+    })
+    expect(applyMove(room, 'guest-socket', 3, 2)).toEqual({ ok: true })
+    expect(room.ultimate.boards[2][3]).toBe('O')
+    expect(room.ultimate.targetBoard).toBe(3)
+  })
+
+  it('opens every unfinished Ultimate board when the destination is closed', () => {
+    const room = liveUltimateRoom()
+    room.ultimate.claims[3] = 'X'
+
+    applyMove(room, 'host-socket', 3, 4)
+
+    expect(room.ultimate.targetBoard).toBeNull()
+    expect(room.lastEvent).toBe('Guest can play any board')
+    expect(applyMove(room, 'guest-socket', 0, 7)).toEqual({ ok: true })
+  })
+
+  it('claims a small board and wins the round with three meta claims', () => {
+    const room = liveUltimateRoom()
+    room.ultimate.claims[0] = 'X'
+    room.ultimate.claims[1] = 'X'
+    room.ultimate.boards[2][0] = 'X'
+    room.ultimate.boards[2][1] = 'X'
+
+    expect(applyMove(room, 'host-socket', 2, 2)).toEqual({ ok: true })
+    expect(room.ultimate.claims[2]).toBe('X')
+    expect(room.winningLine).toEqual([0, 1, 2])
+    expect(room.status).toBe('matchOver')
+    expect(room.matchWinner).toBe('X')
+    expect(room.rounds[0].ultimate.claims.slice(0, 3)).toEqual(['X', 'X', 'X'])
+  })
+
+  it('treats closed small-board draws as neutral on the meta grid', () => {
+    expect(
+      detectUltimateWinner(['draw', 'draw', 'draw', null, null, null, null, null, null]),
+    ).toEqual({ winner: null, line: [] })
+    expect(
+      detectUltimateWinner(['X', 'O', 'draw', 'draw', 'O', 'X', 'O', 'X', 'draw']),
+    ).toEqual({ winner: 'draw', line: [] })
+  })
+
+  it('ends an Ultimate round in a draw when all nine boards close without a line', () => {
+    const room = liveUltimateRoom()
+    room.ultimate.claims = ['X', 'O', 'draw', 'draw', 'O', 'X', 'O', 'X', null]
+    room.ultimate.boards[8] = ['X', 'O', 'X', 'X', 'O', 'O', 'O', 'X', null]
+
+    expect(applyMove(room, 'host-socket', 8, 8)).toEqual({ ok: true })
+    expect(room.ultimate.claims[8]).toBe('draw')
+    expect(room.winner).toBe('draw')
+    expect(room.matchWinner).toBe('draw')
+    expect(room.scores.draws).toBe(1)
   })
 
   it('requires the host and two connected players to start', () => {

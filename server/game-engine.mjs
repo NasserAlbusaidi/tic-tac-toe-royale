@@ -1,7 +1,7 @@
 import { customAlphabet } from 'nanoid'
 
 export const marks = ['X', 'O']
-export const gameModes = ['normal', 'misere']
+export const gameModes = ['normal', 'misere', 'ultimate']
 export const CHAT_MESSAGE_LIMIT = 280
 export const ROOM_CHAT_HISTORY_LIMIT = 50
 export const ROOM_GAME_LOG_LIMIT = 50
@@ -20,6 +20,26 @@ const makeCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 5)
 
 export function emptyBoard() {
   return Array.from({ length: 9 }, () => null)
+}
+
+export function createUltimateState() {
+  return {
+    boards: Array.from({ length: 9 }, () => emptyBoard()),
+    claims: Array.from({ length: 9 }, () => null),
+    targetBoard: null,
+  }
+}
+
+function cloneUltimateState(ultimate) {
+  if (!ultimate) {
+    return null
+  }
+
+  return {
+    boards: ultimate.boards.map((board) => [...board]),
+    claims: [...ultimate.claims],
+    targetBoard: ultimate.targetBoard ?? null,
+  }
 }
 
 export function cleanName(name, fallback = 'Player') {
@@ -57,7 +77,7 @@ export function clampRounds(value) {
 }
 
 export function normalizeGameMode(value) {
-  return value === 'misere' ? 'misere' : 'normal'
+  return gameModes.includes(value) ? value : 'normal'
 }
 
 export function detectWinner(board) {
@@ -74,6 +94,37 @@ export function detectWinner(board) {
   }
 
   return { winner: null, line: [] }
+}
+
+export function detectUltimateWinner(claims) {
+  for (const line of winLines) {
+    const [a, b, c] = line
+    const claim = claims[a]
+
+    if (
+      marks.includes(claim) &&
+      claim === claims[b] &&
+      claim === claims[c]
+    ) {
+      return { winner: claim, line }
+    }
+  }
+
+  if (claims.every(Boolean)) {
+    return { winner: 'draw', line: [] }
+  }
+
+  return { winner: null, line: [] }
+}
+
+function ultimateBoardIsPlayable(ultimate, boardIndex) {
+  return (
+    Number.isInteger(boardIndex) &&
+    boardIndex >= 0 &&
+    boardIndex <= 8 &&
+    ultimate.claims[boardIndex] === null &&
+    ultimate.boards[boardIndex].some((cell) => cell === null)
+  )
 }
 
 function createPlayer(
@@ -114,16 +165,18 @@ export function createRoom({
   }
 
   const code = String(roomCode ?? makeCode()).toUpperCase()
+  const mode = normalizeGameMode(gameMode)
 
   const room = {
     code,
     hostId,
     config: {
       totalRounds: clampRounds(totalRounds),
-      mode: normalizeGameMode(gameMode),
+      mode,
     },
     status: 'lobby',
     board: emptyBoard(),
+    ultimate: mode === 'ultimate' ? createUltimateState() : null,
     turn: 'X',
     starter: 'X',
     winner: null,
@@ -265,6 +318,10 @@ export function startMatch(room, socketId) {
 
   room.status = 'playing'
   room.board = emptyBoard()
+  room.ultimate =
+    normalizeGameMode(room.config.mode) === 'ultimate'
+      ? createUltimateState()
+      : null
   room.turn = room.starter
   room.winner = null
   room.winningLine = []
@@ -291,6 +348,11 @@ function finishRound(room, winner, line, completedBy = winner) {
     line: [...line],
     starter: room.starter,
     board: [...room.board],
+    ultimate: cloneUltimateState(room.ultimate),
+    moves:
+      normalizeGameMode(room.config.mode) === 'ultimate'
+        ? room.ultimate.boards.flat().filter(Boolean).length
+        : room.board.filter(Boolean).length,
     endedAt: new Date().toISOString(),
   })
 
@@ -321,7 +383,7 @@ function finishRound(room, winner, line, completedBy = winner) {
   appendGameLog(room, `${room.lastEvent}.`)
 }
 
-export function applyMove(room, socketId, index) {
+export function applyMove(room, socketId, index, boardIndex) {
   const cell = Number(index)
 
   if (room.status !== 'playing') {
@@ -332,10 +394,6 @@ export function applyMove(room, socketId, index) {
     return { ok: false, error: 'That cell is outside the board.' }
   }
 
-  if (room.board[cell]) {
-    return { ok: false, error: 'That cell is already taken.' }
-  }
-
   const mark = playerMarkFor(room, socketId)
 
   if (!mark) {
@@ -344,6 +402,87 @@ export function applyMove(room, socketId, index) {
 
   if (room.turn !== mark) {
     return { ok: false, error: 'Wait for your turn.' }
+  }
+
+  if (normalizeGameMode(room.config.mode) === 'ultimate') {
+    const smallBoard = Number(boardIndex)
+
+    if (!Number.isInteger(smallBoard) || smallBoard < 0 || smallBoard > 8) {
+      return { ok: false, error: 'Choose one of the nine small boards.' }
+    }
+
+    const ultimate = room.ultimate ?? createUltimateState()
+    room.ultimate = ultimate
+    const forcedBoard = ultimateBoardIsPlayable(
+      ultimate,
+      ultimate.targetBoard,
+    )
+      ? ultimate.targetBoard
+      : null
+
+    if (forcedBoard !== null && smallBoard !== forcedBoard) {
+      return {
+        ok: false,
+        error: `You must play in board ${forcedBoard + 1}.`,
+      }
+    }
+
+    if (!ultimateBoardIsPlayable(ultimate, smallBoard)) {
+      return {
+        ok: false,
+        error: 'That small board is already claimed or full.',
+      }
+    }
+
+    if (ultimate.boards[smallBoard][cell]) {
+      return { ok: false, error: 'That cell is already taken.' }
+    }
+
+    ultimate.boards[smallBoard][cell] = mark
+    appendGameLog(
+      room,
+      `${room.players[mark]?.name ?? mark} placed ${mark} at ${smallBoard + 1}.${cell + 1}.`,
+    )
+
+    const smallResult = detectWinner(ultimate.boards[smallBoard])
+
+    if (smallResult.winner === 'draw') {
+      ultimate.claims[smallBoard] = 'draw'
+      appendGameLog(room, `Board ${smallBoard + 1} closed in a draw.`)
+    } else if (smallResult.winner) {
+      ultimate.claims[smallBoard] = smallResult.winner
+      appendGameLog(
+        room,
+        `${room.players[mark]?.name ?? mark} claimed board ${smallBoard + 1} for ${mark}.`,
+      )
+    }
+
+    const ultimateResult = detectUltimateWinner(ultimate.claims)
+
+    if (ultimateResult.winner) {
+      finishRound(
+        room,
+        ultimateResult.winner,
+        ultimateResult.line,
+        mark,
+      )
+      return { ok: true }
+    }
+
+    const nextMark = mark === 'X' ? 'O' : 'X'
+    const nextBoard = ultimateBoardIsPlayable(ultimate, cell) ? cell : null
+    ultimate.targetBoard = nextBoard
+    room.turn = nextMark
+    room.lastEvent =
+      nextBoard === null
+        ? `${room.players[nextMark]?.name ?? nextMark} can play any board`
+        : `${room.players[nextMark]?.name ?? nextMark} must play board ${nextBoard + 1}`
+
+    return { ok: true }
+  }
+
+  if (room.board[cell]) {
+    return { ok: false, error: 'That cell is already taken.' }
   }
 
   room.board[cell] = mark
@@ -389,6 +528,10 @@ export function nextRound(room, socketId) {
   room.starter = room.currentRound % 2 === 1 ? 'X' : 'O'
   room.turn = room.starter
   room.board = emptyBoard()
+  room.ultimate =
+    normalizeGameMode(room.config.mode) === 'ultimate'
+      ? createUltimateState()
+      : null
   room.winner = null
   room.winningLine = []
   room.status = 'playing'
@@ -406,6 +549,10 @@ export function resetMatch(room, socketId, totalRounds) {
   room.config.totalRounds = clampRounds(totalRounds ?? room.config.totalRounds)
   room.status = 'lobby'
   room.board = emptyBoard()
+  room.ultimate =
+    normalizeGameMode(room.config.mode) === 'ultimate'
+      ? createUltimateState()
+      : null
   room.turn = 'X'
   room.starter = 'X'
   room.winner = null
@@ -467,6 +614,7 @@ export function appendChatMessage(
 
 export function publicRoom(room, socketId) {
   const mark = playerMarkFor(room, socketId)
+  const mode = normalizeGameMode(room.config?.mode)
   const publicPlayer = (player) =>
     player
       ? {
@@ -482,10 +630,14 @@ export function publicRoom(room, socketId) {
     code: room.code,
     config: {
       ...room.config,
-      mode: normalizeGameMode(room.config?.mode),
+      mode,
     },
     status: room.status,
     board: [...room.board],
+    ultimate:
+      mode === 'ultimate'
+        ? cloneUltimateState(room.ultimate ?? createUltimateState())
+        : null,
     turn: room.turn,
     starter: room.starter,
     winner: room.winner,
@@ -499,6 +651,12 @@ export function publicRoom(room, socketId) {
         round.completedBy ?? (round.winner === 'draw' ? null : round.winner),
       line: [...round.line],
       board: [...round.board],
+      ultimate: cloneUltimateState(round.ultimate),
+      moves:
+        round.moves ??
+        (round.ultimate
+          ? round.ultimate.boards.flat().filter(Boolean).length
+          : round.board.filter(Boolean).length),
     })),
     chatMessages: (room.chatMessages ?? []).map((message) => ({ ...message })),
     gameLog: (room.gameLog ?? []).map((entry) => ({ ...entry })),
