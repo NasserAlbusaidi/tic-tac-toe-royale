@@ -1,5 +1,5 @@
 export type Mark = 'X' | 'O'
-export type GameMode = 'normal' | 'misere' | 'ultimate'
+export type GameMode = 'normal' | 'misere' | 'ultimate' | 'connect4'
 export type Winner = Mark | 'draw' | null
 export type RoomStatus = 'lobby' | 'playing' | 'roundOver' | 'matchOver'
 

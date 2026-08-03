@@ -1,7 +1,9 @@
 import { customAlphabet } from 'nanoid'
 
 export const marks = ['X', 'O']
-export const gameModes = ['normal', 'misere', 'ultimate']
+export const gameModes = ['normal', 'misere', 'ultimate', 'connect4']
+export const CONNECT_FOUR_ROWS = 6
+export const CONNECT_FOUR_COLUMNS = 7
 export const CHAT_MESSAGE_LIMIT = 280
 export const ROOM_CHAT_HISTORY_LIMIT = 50
 export const ROOM_GAME_LOG_LIMIT = 50
@@ -20,6 +22,19 @@ const makeCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 5)
 
 export function emptyBoard() {
   return Array.from({ length: 9 }, () => null)
+}
+
+export function emptyConnectFourBoard() {
+  return Array.from(
+    { length: CONNECT_FOUR_ROWS * CONNECT_FOUR_COLUMNS },
+    () => null,
+  )
+}
+
+function emptyBoardForMode(mode) {
+  return normalizeGameMode(mode) === 'connect4'
+    ? emptyConnectFourBoard()
+    : emptyBoard()
 }
 
 export function createUltimateState() {
@@ -90,6 +105,79 @@ export function detectWinner(board) {
   }
 
   if (board.every(Boolean)) {
+    return { winner: 'draw', line: [] }
+  }
+
+  return { winner: null, line: [] }
+}
+
+export function connectFourLandingIndex(board, column) {
+  const parsedColumn = Number(column)
+
+  if (
+    !Number.isInteger(parsedColumn) ||
+    parsedColumn < 0 ||
+    parsedColumn >= CONNECT_FOUR_COLUMNS
+  ) {
+    return -1
+  }
+
+  for (let row = CONNECT_FOUR_ROWS - 1; row >= 0; row -= 1) {
+    const index = row * CONNECT_FOUR_COLUMNS + parsedColumn
+
+    if (!board[index]) {
+      return index
+    }
+  }
+
+  return -1
+}
+
+export function detectConnectFourWinner(board) {
+  const directions = [
+    [0, 1],
+    [1, 0],
+    [1, 1],
+    [1, -1],
+  ]
+
+  for (let row = 0; row < CONNECT_FOUR_ROWS; row += 1) {
+    for (let column = 0; column < CONNECT_FOUR_COLUMNS; column += 1) {
+      const startIndex = row * CONNECT_FOUR_COLUMNS + column
+      const mark = board[startIndex]
+
+      if (!marks.includes(mark)) {
+        continue
+      }
+
+      for (const [rowStep, columnStep] of directions) {
+        const line = Array.from({ length: 4 }, (_, offset) => {
+          const nextRow = row + rowStep * offset
+          const nextColumn = column + columnStep * offset
+
+          if (
+            nextRow < 0 ||
+            nextRow >= CONNECT_FOUR_ROWS ||
+            nextColumn < 0 ||
+            nextColumn >= CONNECT_FOUR_COLUMNS
+          ) {
+            return -1
+          }
+
+          return nextRow * CONNECT_FOUR_COLUMNS + nextColumn
+        })
+
+        if (line.every((index) => index >= 0 && board[index] === mark)) {
+          return { winner: mark, line }
+        }
+      }
+    }
+  }
+
+  if (
+    board.length === CONNECT_FOUR_ROWS * CONNECT_FOUR_COLUMNS &&
+    board.every(Boolean)
+  ) {
     return { winner: 'draw', line: [] }
   }
 
@@ -175,7 +263,7 @@ export function createRoom({
       mode,
     },
     status: 'lobby',
-    board: emptyBoard(),
+    board: emptyBoardForMode(mode),
     ultimate: mode === 'ultimate' ? createUltimateState() : null,
     turn: 'X',
     starter: 'X',
@@ -317,7 +405,7 @@ export function startMatch(room, socketId) {
   }
 
   room.status = 'playing'
-  room.board = emptyBoard()
+  room.board = emptyBoardForMode(room.config.mode)
   room.ultimate =
     normalizeGameMode(room.config.mode) === 'ultimate'
       ? createUltimateState()
@@ -385,13 +473,22 @@ function finishRound(room, winner, line, completedBy = winner) {
 
 export function applyMove(room, socketId, index, boardIndex) {
   const cell = Number(index)
+  const mode = normalizeGameMode(room.config.mode)
 
   if (room.status !== 'playing') {
     return { ok: false, error: 'The board is not live.' }
   }
 
-  if (!Number.isInteger(cell) || cell < 0 || cell > 8) {
-    return { ok: false, error: 'That cell is outside the board.' }
+  const maximumMove = mode === 'connect4' ? CONNECT_FOUR_COLUMNS - 1 : 8
+
+  if (!Number.isInteger(cell) || cell < 0 || cell > maximumMove) {
+    return {
+      ok: false,
+      error:
+        mode === 'connect4'
+          ? 'That column is outside the board.'
+          : 'That cell is outside the board.',
+    }
   }
 
   const mark = playerMarkFor(room, socketId)
@@ -404,7 +501,32 @@ export function applyMove(room, socketId, index, boardIndex) {
     return { ok: false, error: 'Wait for your turn.' }
   }
 
-  if (normalizeGameMode(room.config.mode) === 'ultimate') {
+  if (mode === 'connect4') {
+    const landingIndex = connectFourLandingIndex(room.board, cell)
+
+    if (landingIndex < 0) {
+      return { ok: false, error: `Column ${cell + 1} is full.` }
+    }
+
+    room.board[landingIndex] = mark
+    appendGameLog(
+      room,
+      `${room.players[mark]?.name ?? mark} dropped ${mark} in column ${cell + 1}.`,
+    )
+
+    const result = detectConnectFourWinner(room.board)
+
+    if (result.winner) {
+      finishRound(room, result.winner, result.line, mark)
+    } else {
+      room.turn = mark === 'X' ? 'O' : 'X'
+      room.lastEvent = `${room.turn} to move`
+    }
+
+    return { ok: true }
+  }
+
+  if (mode === 'ultimate') {
     const smallBoard = Number(boardIndex)
 
     if (!Number.isInteger(smallBoard) || smallBoard < 0 || smallBoard > 8) {
@@ -499,7 +621,7 @@ export function applyMove(room, socketId, index, boardIndex) {
     } else {
       const completedBy = result.winner
       const roundWinner =
-        normalizeGameMode(room.config.mode) === 'misere'
+        mode === 'misere'
           ? completedBy === 'X'
             ? 'O'
             : 'X'
@@ -527,7 +649,7 @@ export function nextRound(room, socketId) {
   room.currentRound = room.rounds.length + 1
   room.starter = room.currentRound % 2 === 1 ? 'X' : 'O'
   room.turn = room.starter
-  room.board = emptyBoard()
+  room.board = emptyBoardForMode(room.config.mode)
   room.ultimate =
     normalizeGameMode(room.config.mode) === 'ultimate'
       ? createUltimateState()
@@ -548,7 +670,7 @@ export function resetMatch(room, socketId, totalRounds) {
 
   room.config.totalRounds = clampRounds(totalRounds ?? room.config.totalRounds)
   room.status = 'lobby'
-  room.board = emptyBoard()
+  room.board = emptyBoardForMode(room.config.mode)
   room.ultimate =
     normalizeGameMode(room.config.mode) === 'ultimate'
       ? createUltimateState()

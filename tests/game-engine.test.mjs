@@ -4,9 +4,12 @@ import {
   applyMove,
   assignParticipant,
   CHAT_MESSAGE_LIMIT,
+  connectFourLandingIndex,
   createRoom,
+  detectConnectFourWinner,
   detectUltimateWinner,
   detectWinner,
+  emptyConnectFourBoard,
   nextRound,
   normalizeGameMode,
   publicRoom,
@@ -44,6 +47,21 @@ function liveUltimateRoom(totalRounds = 1) {
   return room
 }
 
+function liveConnectFourRoom(totalRounds = 1) {
+  const room = createRoom({
+    hostId: 'host-socket',
+    hostName: 'Host',
+    totalRounds,
+    gameMode: 'connect4',
+    roomCode: 'FOUR1',
+  })
+
+  assignParticipant(room, { clientId: 'guest-socket', name: 'Guest' })
+  startMatch(room, 'host-socket')
+
+  return room
+}
+
 describe('game engine', () => {
   it('detects wins and draws', () => {
     expect(detectWinner(['X', 'X', 'X', null, null, null, null, null, null])).toEqual({
@@ -59,10 +77,73 @@ describe('game engine', () => {
   it('normalizes room modes and defaults to normal play', () => {
     expect(normalizeGameMode('misere')).toBe('misere')
     expect(normalizeGameMode('ultimate')).toBe('ultimate')
+    expect(normalizeGameMode('connect4')).toBe('connect4')
     expect(normalizeGameMode('unknown')).toBe('normal')
     expect(createRoom({ hostId: 'host-socket', roomCode: 'TEST4' }).config.mode).toBe(
       'normal',
     )
+  })
+
+  it('creates a 6 by 7 board and applies Connect Four gravity', () => {
+    const room = liveConnectFourRoom()
+
+    expect(room.board).toHaveLength(42)
+    expect(connectFourLandingIndex(room.board, 3)).toBe(38)
+    expect(applyMove(room, 'host-socket', 3)).toEqual({ ok: true })
+    expect(room.board[38]).toBe('X')
+    expect(applyMove(room, 'guest-socket', 3)).toEqual({ ok: true })
+    expect(room.board[31]).toBe('O')
+    expect(room.gameLog.at(-1).text).toBe('Guest dropped O in column 4.')
+  })
+
+  it('detects horizontal, vertical, and diagonal Connect Four lines', () => {
+    const horizontal = emptyConnectFourBoard()
+    horizontal.splice(35, 4, 'X', 'X', 'X', 'X')
+    expect(detectConnectFourWinner(horizontal)).toEqual({
+      winner: 'X',
+      line: [35, 36, 37, 38],
+    })
+
+    const vertical = emptyConnectFourBoard()
+    for (const index of [14, 21, 28, 35]) vertical[index] = 'O'
+    expect(detectConnectFourWinner(vertical)).toEqual({
+      winner: 'O',
+      line: [14, 21, 28, 35],
+    })
+
+    const diagonal = emptyConnectFourBoard()
+    for (const index of [14, 22, 30, 38]) diagonal[index] = 'X'
+    expect(detectConnectFourWinner(diagonal)).toEqual({
+      winner: 'X',
+      line: [14, 22, 30, 38],
+    })
+  })
+
+  it('wins a Connect Four round and rejects a full column', () => {
+    const room = liveConnectFourRoom()
+
+    applyMove(room, 'host-socket', 0)
+    applyMove(room, 'guest-socket', 0)
+    applyMove(room, 'host-socket', 1)
+    applyMove(room, 'guest-socket', 1)
+    applyMove(room, 'host-socket', 2)
+    applyMove(room, 'guest-socket', 2)
+    expect(applyMove(room, 'host-socket', 3)).toEqual({ ok: true })
+
+    expect(room.status).toBe('matchOver')
+    expect(room.winner).toBe('X')
+    expect(room.winningLine).toEqual([35, 36, 37, 38])
+    expect(room.rounds[0].moves).toBe(7)
+
+    const fullColumnRoom = liveConnectFourRoom()
+    for (let move = 0; move < 6; move += 1) {
+      const player = move % 2 === 0 ? 'host-socket' : 'guest-socket'
+      expect(applyMove(fullColumnRoom, player, 6)).toEqual({ ok: true })
+    }
+    expect(applyMove(fullColumnRoom, 'host-socket', 6)).toEqual({
+      ok: false,
+      error: 'Column 7 is full.',
+    })
   })
 
   it('creates nine numbered boards for Ultimate play', () => {

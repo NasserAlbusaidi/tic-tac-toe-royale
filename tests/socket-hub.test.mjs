@@ -192,6 +192,61 @@ describe('socket hub', () => {
     expect(routedMove.payload.room.ultimate.targetBoard).toBe(0)
   })
 
+  it('plays Connect Four column moves through the authenticated room protocol', async () => {
+    hub = createSocketHub({
+      store: createMemoryRoomStore(),
+      instanceId: 'test-instance',
+    })
+    const host = new FakeSocket()
+    const guest = new FakeSocket()
+    hub.register(host)
+    hub.register(guest)
+
+    const created = await request(host, 'create-connect-four', 'room:create', {
+      clientId: 'connect-four-host-123',
+      name: 'Host',
+      totalRounds: 1,
+      gameMode: 'connect4',
+    })
+    const roomCode = created.payload.room.code
+    expect(created.payload.room.config.mode).toBe('connect4')
+    expect(created.payload.room.board).toHaveLength(42)
+
+    await request(guest, 'join-connect-four', 'room:join', {
+      clientId: 'connect-four-guest-456',
+      name: 'Guest',
+      roomCode,
+    })
+    await request(host, 'start-connect-four', 'match:start', { roomCode })
+
+    const moves = [
+      [host, 0],
+      [guest, 0],
+      [host, 1],
+      [guest, 1],
+      [host, 2],
+      [guest, 2],
+      [host, 3],
+    ]
+    let response
+
+    for (const [moveSocket, column] of moves) {
+      response = await request(
+        moveSocket,
+        `connect-four-move-${column}-${moveSocket.sent.length}`,
+        'cell:play',
+        { roomCode, index: column },
+      )
+    }
+
+    expect(response.payload.room.status).toBe('matchOver')
+    expect(response.payload.room.winner).toBe('X')
+    expect(response.payload.room.winningLine).toEqual([35, 36, 37, 38])
+    expect(response.payload.room.gameLog.at(-2).text).toBe(
+      'Host dropped X in column 4.',
+    )
+  })
+
   it('lets spectators read room chat but rejects sending', async () => {
     hub = createSocketHub({
       store: createMemoryRoomStore(),

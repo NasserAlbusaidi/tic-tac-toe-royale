@@ -27,6 +27,8 @@ type CommunicationTab = 'chat' | 'log'
 type DesktopRailTab = 'scores' | CommunicationTab
 
 const roundOptions = [1, 3, 5, 7, 9]
+const connectFourRows = 6
+const connectFourColumns = 7
 const chatMessageLimit = 280
 const savedNameKey = 'xo-royale-name'
 const clientIdKey = 'xo-royale-client-id'
@@ -50,9 +52,13 @@ function getClientId() {
   return clientId
 }
 
-function markLabel(mark: Mark | null) {
+function markLabel(mark: Mark | null, mode?: GameMode) {
   if (!mark) {
     return 'Watching'
+  }
+
+  if (mode === 'connect4') {
+    return mark === 'X' ? 'Brass discs' : 'Aqua discs'
   }
 
   return mark === 'X' ? 'Crosses' : 'Noughts'
@@ -67,6 +73,10 @@ function modeLabel(mode: GameMode) {
     return 'Ultimate'
   }
 
+  if (mode === 'connect4') {
+    return 'Connect Four'
+  }
+
   return 'Normal'
 }
 
@@ -77,6 +87,10 @@ function modeSummary(mode: GameMode) {
 
   if (mode === 'ultimate') {
     return 'Ultimate · claim three boards'
+  }
+
+  if (mode === 'connect4') {
+    return 'Connect Four · link four discs'
   }
 
   return 'Normal · three wins'
@@ -494,8 +508,8 @@ function App() {
         <section className="welcome-grid" aria-label="Create or join a match">
           <div className="welcome-copy">
             <span className="eyebrow">Browser table</span>
-            <h1>Play a sharper Tic Tac Toe match.</h1>
-            <p>Private table. Classic, Misère, or Ultimate rules. Every move visible.</p>
+            <h1>Play a sharper table game.</h1>
+            <p>Private table. Classic, Misère, Ultimate, or Connect Four. Every move visible.</p>
           </div>
 
           <div className="setup-panel">
@@ -557,6 +571,14 @@ function App() {
                     >
                       <span>Ultimate</span>
                       <small>Claim three boards</small>
+                    </button>
+                    <button
+                      className={gameMode === 'connect4' ? 'active' : ''}
+                      type="button"
+                      onClick={() => setGameMode('connect4')}
+                    >
+                      <span>Connect Four</span>
+                      <small>Link four discs</small>
                     </button>
                   </div>
                 </fieldset>
@@ -630,8 +652,18 @@ function App() {
             </div>
 
             <div className="player-list">
-              <PlayerTile mark="X" player={room.players.X} you={room.you.mark === 'X'} />
-              <PlayerTile mark="O" player={room.players.O} you={room.you.mark === 'O'} />
+              <PlayerTile
+                mark="X"
+                mode={room.config.mode}
+                player={room.players.X}
+                you={room.you.mark === 'X'}
+              />
+              <PlayerTile
+                mark="O"
+                mode={room.config.mode}
+                player={room.players.O}
+                you={room.you.mark === 'O'}
+              />
             </div>
 
             <div className="meta-strip">
@@ -711,7 +743,10 @@ function App() {
                   {room.config.mode === 'ultimate'
                     ? 'Claim three small boards in a row. '
                     : ''}
-                  You are {markLabel(room.you.mark)}
+                  {room.config.mode === 'connect4'
+                    ? 'Drop discs into columns and connect four. '
+                    : ''}
+                  You are {markLabel(room.you.mark, room.config.mode)}
                   {opponentMark
                     ? ` against ${room.players[opponentMark]?.name ?? opponentMark}`
                     : ''}
@@ -734,7 +769,19 @@ function App() {
                 </div>
               ) : null}
 
-              {room.config.mode === 'ultimate' ? (
+              {room.config.mode === 'connect4' && room.status === 'playing' ? (
+                <div className="connect-four-guidance">
+                  Choose an open column · the disc falls to the lowest space
+                </div>
+              ) : null}
+
+              {room.config.mode === 'connect4' ? (
+                <ConnectFourBoard
+                  room={room}
+                  canPlay={canPlay}
+                  onPlay={(column) => emitRoomEvent('cell:play', { index: column })}
+                />
+              ) : room.config.mode === 'ultimate' ? (
                 <UltimateBoard
                   room={room}
                   canPlay={canPlay}
@@ -876,6 +923,86 @@ function App() {
   )
 }
 
+function ConnectFourBoard({
+  room,
+  canPlay,
+  onPlay,
+}: {
+  room: RoomState
+  canPlay: boolean
+  onPlay: (column: number) => void
+}) {
+  const landingIndex = (column: number) => {
+    for (let row = connectFourRows - 1; row >= 0; row -= 1) {
+      const index = row * connectFourColumns + column
+
+      if (!room.board[index]) {
+        return index
+      }
+    }
+
+    return -1
+  }
+
+  return (
+    <div className="connect-four-shell">
+      <div className="connect-four-column-labels" aria-hidden="true">
+        {Array.from({ length: connectFourColumns }, (_, column) => (
+          <span key={column}>{column + 1}</span>
+        ))}
+      </div>
+      <div
+        className={`connect-four-board ${canPlay ? 'active-turn' : ''}`}
+        role="group"
+        aria-label="Connect Four board. Choose a column from 1 through 7."
+      >
+        {Array.from({ length: connectFourColumns }, (_, column) => {
+          const landing = landingIndex(column)
+
+          return (
+            <button
+              aria-label={
+                landing < 0
+                  ? `Column ${column + 1}, full`
+                  : `Drop ${markLabel(room.turn, room.config.mode)} in column ${column + 1}`
+              }
+              className="connect-four-column"
+              disabled={!canPlay || landing < 0}
+              key={column}
+              type="button"
+              onClick={() => onPlay(column)}
+            >
+              {Array.from({ length: connectFourRows }, (_, row) => {
+                const index = row * connectFourColumns + column
+                const mark = room.board[index]
+
+                return (
+                  <span
+                    className={[
+                      'connect-four-slot',
+                      index === landing && canPlay ? 'landing-slot' : '',
+                      room.winningLine.includes(index) ? 'winning' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    key={row}
+                    aria-hidden="true"
+                  >
+                    {mark ? (
+                      <span className={`connect-four-disc mark-${mark.toLowerCase()}`} />
+                    ) : null}
+                  </span>
+                )
+              })}
+            </button>
+          )
+        })}
+      </div>
+      <div className="connect-four-foot" aria-hidden="true" />
+    </div>
+  )
+}
+
 function UltimateBoard({
   room,
   canPlay,
@@ -958,16 +1085,20 @@ function UltimateBoard({
 
 function PlayerTile({
   mark,
+  mode,
   player,
   you,
 }: {
   mark: Mark
+  mode: GameMode
   player: RoomState['players'][Mark]
   you: boolean
 }) {
   return (
-    <div className={`player-tile mark-${mark.toLowerCase()}`}>
-      <span>{mark}</span>
+    <div
+      className={`player-tile mark-${mark.toLowerCase()}${mode === 'connect4' ? ' connect-four-player' : ''}`}
+    >
+      <span>{mode === 'connect4' ? '●' : mark}</span>
       <strong>{player?.name ?? 'Open seat'}</strong>
       <small>
         {you ? 'You' : player?.connected ? 'Online' : player ? 'Disconnected' : 'Waiting'}
@@ -1004,12 +1135,16 @@ function MobileMatchSummary({ room }: { room: RoomState }) {
         </div>
         <span>{modeLabel(room.config.mode)}</span>
       </div>
-      <div className="mobile-player-score">
+      <div
+        className={`mobile-player-score${room.config.mode === 'connect4' ? ' connect-four-players' : ''}`}
+      >
         <div className="mobile-player">
-          <b>X</b>
+          <b>{room.config.mode === 'connect4' ? '●' : 'X'}</b>
           <span>
             <strong>{room.players.X?.name ?? 'Open seat'}</strong>
-            <small>{room.you.mark === 'X' ? 'You' : 'Crosses'}</small>
+            <small>
+              {room.you.mark === 'X' ? 'You' : markLabel('X', room.config.mode)}
+            </small>
           </span>
         </div>
         <strong className="mobile-score">
@@ -1018,9 +1153,11 @@ function MobileMatchSummary({ room }: { room: RoomState }) {
         <div className="mobile-player mobile-player-o">
           <span>
             <strong>{room.players.O?.name ?? 'Open seat'}</strong>
-            <small>{room.you.mark === 'O' ? 'You' : 'Noughts'}</small>
+            <small>
+              {room.you.mark === 'O' ? 'You' : markLabel('O', room.config.mode)}
+            </small>
           </span>
-          <b>O</b>
+          <b>{room.config.mode === 'connect4' ? '●' : 'O'}</b>
         </div>
       </div>
     </section>
@@ -1058,14 +1195,16 @@ function MobileLobbyCard({
         </button>
       </div>
 
-      <div className="mobile-lobby-players">
+      <div
+        className={`mobile-lobby-players${room.config.mode === 'connect4' ? ' connect-four-players' : ''}`}
+      >
         <div>
-          <b>X</b>
+          <b>{room.config.mode === 'connect4' ? '●' : 'X'}</b>
           <strong>{room.players.X?.name ?? 'Open seat'}</strong>
           <small>{room.you.mark === 'X' ? 'You · host' : 'Host'}</small>
         </div>
         <div className="mark-o">
-          <b>O</b>
+          <b>{room.config.mode === 'connect4' ? '●' : 'O'}</b>
           <strong>{room.players.O?.name ?? 'Open seat'}</strong>
           <small>{room.players.O?.connected ? 'Ready' : 'Waiting'}</small>
         </div>

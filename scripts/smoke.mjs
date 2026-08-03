@@ -131,8 +131,56 @@ try {
 
   assert(chat.room.chatMessages.at(-1)?.body === 'Smoke test complete.', 'Chat failed.')
 
+  const connectFourCreated = await request(hostSocket, 'room:create', {
+    clientId: hostId,
+    name: 'Smoke Host',
+    totalRounds: 1,
+    gameMode: 'connect4',
+  })
+  const connectFourRoomCode = connectFourCreated.room.code
+
+  await request(guestSocket, 'room:join', {
+    clientId: guestId,
+    name: 'Smoke Guest',
+    roomCode: connectFourRoomCode,
+  })
+  await request(hostSocket, 'match:start', {
+    clientId: hostId,
+    roomCode: connectFourRoomCode,
+  })
+
+  const connectFourMoves = [
+    [hostSocket, hostId, 0],
+    [guestSocket, guestId, 0],
+    [hostSocket, hostId, 1],
+    [guestSocket, guestId, 1],
+    [hostSocket, hostId, 2],
+    [guestSocket, guestId, 2],
+    [hostSocket, hostId, 3],
+  ]
+  let connectFourResult
+
+  for (const [socket, clientId, column] of connectFourMoves) {
+    connectFourResult = await request(socket, 'cell:play', {
+      clientId,
+      roomCode: connectFourRoomCode,
+      index: column,
+    })
+  }
+
+  assert(
+    connectFourResult.room.config.mode === 'connect4',
+    'Room is not in Connect Four mode.',
+  )
+  assert(connectFourResult.room.winner === 'X', 'Connect Four winner was not X.')
+  assert(
+    connectFourResult.room.winningLine.join(',') === '35,36,37,38',
+    'Connect Four winning line was not recorded.',
+  )
+
   console.log(`Smoke passed: ${targetUrl}`)
   console.log(`Room ${roomCode}: 5.3 → board 3 → 3.1 → board 1`)
+  console.log(`Room ${connectFourRoomCode}: columns 1, 1, 2, 2, 3, 3, 4 → X wins`)
 } finally {
   hostSocket?.close()
   guestSocket?.close()
