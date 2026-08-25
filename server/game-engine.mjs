@@ -1,7 +1,16 @@
 import { customAlphabet } from 'nanoid'
+import {
+  applyAllegationVote as applyVoteToAllegationsState,
+  createAllegationsState,
+  nextAllegationCase,
+  normalizeAllegationsCaseCount,
+  publicAllegationsState,
+  resetAllegationsMatch,
+  startAllegationsMatch,
+} from './allegations-engine.mjs'
 
 export const marks = ['X', 'O']
-export const gameModes = ['normal', 'misere', 'ultimate', 'connect4']
+export const gameModes = ['normal', 'misere', 'ultimate', 'connect4', 'allegations']
 export const CONNECT_FOUR_ROWS = 6
 export const CONNECT_FOUR_COLUMNS = 7
 export const CHAT_MESSAGE_LIMIT = 280
@@ -244,8 +253,10 @@ export function createRoom({
   hostConnectionId = hostId,
   hostName,
   hostResumeTokenHash,
-  totalRounds = 5,
+  totalRounds,
   gameMode = 'normal',
+  allegationsPack,
+  allegationsTone,
   roomCode,
 } = {}) {
   if (!hostId) {
@@ -259,12 +270,22 @@ export function createRoom({
     code,
     hostId,
     config: {
-      totalRounds: clampRounds(totalRounds),
+      totalRounds:
+        mode === 'allegations'
+          ? normalizeAllegationsCaseCount(totalRounds)
+          : clampRounds(totalRounds),
       mode,
     },
     status: 'lobby',
     board: emptyBoardForMode(mode),
     ultimate: mode === 'ultimate' ? createUltimateState() : null,
+    allegations:
+      mode === 'allegations'
+        ? createAllegationsState({
+            pack: allegationsPack,
+            tone: allegationsTone,
+          })
+        : null,
     turn: 'X',
     starter: 'X',
     winner: null,
@@ -395,13 +416,38 @@ export function markDisconnected(room, clientId, connectionId = clientId) {
   return 'spectator'
 }
 
-export function startMatch(room, socketId) {
+export function startMatch(room, socketId, { random = Math.random } = {}) {
   if (socketId !== room.hostId) {
     return { ok: false, error: 'Only the host can start the match.' }
   }
 
   if (!room.players.X?.connected || !room.players.O?.connected) {
     return { ok: false, error: 'Two connected players are needed.' }
+  }
+
+  if (normalizeGameMode(room.config.mode) === 'allegations') {
+    if (room.status !== 'lobby') {
+      return { ok: false, error: 'This court session has already started.' }
+    }
+
+    room.allegations = startAllegationsMatch(
+      room.allegations ?? createAllegationsState(),
+      { count: room.config.totalRounds, random },
+    )
+    room.status = 'playing'
+    room.board = emptyBoard()
+    room.ultimate = null
+    room.turn = 'X'
+    room.starter = 'X'
+    room.winner = null
+    room.winningLine = []
+    room.matchWinner = null
+    room.currentRound = 1
+    room.scores = { X: 0, O: 0, draws: 0 }
+    room.rounds = []
+    room.lastEvent = 'Case 1 opened'
+    appendGameLog(room, 'Case 1 opened. Voting is sealed.')
+    return { ok: true }
   }
 
   room.status = 'playing'
@@ -474,6 +520,13 @@ function finishRound(room, winner, line, completedBy = winner) {
 export function applyMove(room, socketId, index, boardIndex) {
   const cell = Number(index)
   const mode = normalizeGameMode(room.config.mode)
+
+  if (mode === 'allegations') {
+    return {
+      ok: false,
+      error: 'The Allegations uses sealed verdicts, not board moves.',
+    }
+  }
 
   if (room.status !== 'playing') {
     return { ok: false, error: 'The board is not live.' }
@@ -637,6 +690,69 @@ export function applyMove(room, socketId, index, boardIndex) {
   return { ok: true }
 }
 
+export function applyAllegationVote(room, socketId, target) {
+  if (normalizeGameMode(room.config.mode) !== 'allegations') {
+    return { ok: false, error: 'This room is not hearing allegations.' }
+  }
+
+  if (room.status !== 'playing') {
+    return { ok: false, error: 'Voting is not open for this case.' }
+  }
+
+  if (!marks.includes(target)) {
+    return { ok: false, error: 'Choose one of the two suspects.' }
+  }
+
+  const mark = playerMarkFor(room, socketId)
+
+  if (!mark) {
+    return { ok: false, error: 'Spectators cannot submit verdicts.' }
+  }
+
+  if (!room.players[mark]?.connected) {
+    return { ok: false, error: 'Reconnect before submitting a verdict.' }
+  }
+
+  const allegations = room.allegations
+
+  if (!allegations?.currentPromptId) {
+    return { ok: false, error: 'The court has no active allegation.' }
+  }
+
+  if (allegations.submitted[mark]) {
+    return { ok: false, error: 'Your verdict is already locked.' }
+  }
+
+  const result = applyVoteToAllegationsState(allegations, {
+    voter: mark,
+    target,
+    caseNumber: room.currentRound,
+    totalCases: room.config.totalRounds,
+  })
+
+  appendGameLog(room, `${room.players[mark].name} sealed a verdict.`)
+
+  if (!result.resolved) {
+    const waitingFor = mark === 'X' ? 'O' : 'X'
+    room.lastEvent = `Waiting for ${room.players[waitingFor]?.name ?? waitingFor}`
+    return { ok: true }
+  }
+
+  if (result.outcome === 'unanimous') {
+    const chargedName = room.players[result.charged]?.name ?? result.charged
+    room.lastEvent = `Unanimous verdict against ${chargedName}`
+  } else if (result.outcome === 'mutualSlander') {
+    room.lastEvent = 'Mutual slander. Case dismissed'
+  } else {
+    room.lastEvent = 'Unexpected self-awareness. Case dismissed'
+  }
+
+  room.status = result.matchOver ? 'matchOver' : 'roundOver'
+  appendGameLog(room, `${room.lastEvent}.`)
+
+  return { ok: true }
+}
+
 export function nextRound(room, socketId) {
   if (socketId !== room.hostId) {
     return { ok: false, error: 'Only the host can advance rounds.' }
@@ -644,6 +760,15 @@ export function nextRound(room, socketId) {
 
   if (room.status !== 'roundOver') {
     return { ok: false, error: 'The current round is not finished.' }
+  }
+
+  if (normalizeGameMode(room.config.mode) === 'allegations') {
+    room.currentRound = room.allegations.cases.length + 1
+    nextAllegationCase(room.allegations)
+    room.status = 'playing'
+    room.lastEvent = `Case ${room.currentRound} opened`
+    appendGameLog(room, `Case ${room.currentRound} opened. Voting is sealed.`)
+    return { ok: true }
   }
 
   room.currentRound = room.rounds.length + 1
@@ -668,12 +793,20 @@ export function resetMatch(room, socketId, totalRounds) {
     return { ok: false, error: 'Only the host can reset the match.' }
   }
 
-  room.config.totalRounds = clampRounds(totalRounds ?? room.config.totalRounds)
+  const mode = normalizeGameMode(room.config.mode)
+  room.config.totalRounds =
+    mode === 'allegations'
+      ? normalizeAllegationsCaseCount(totalRounds ?? room.config.totalRounds)
+      : clampRounds(totalRounds ?? room.config.totalRounds)
   room.status = 'lobby'
   room.board = emptyBoardForMode(room.config.mode)
   room.ultimate =
-    normalizeGameMode(room.config.mode) === 'ultimate'
+    mode === 'ultimate'
       ? createUltimateState()
+      : null
+  room.allegations =
+    mode === 'allegations'
+      ? resetAllegationsMatch(room.allegations ?? createAllegationsState())
       : null
   room.turn = 'X'
   room.starter = 'X'
@@ -759,6 +892,13 @@ export function publicRoom(room, socketId) {
     ultimate:
       mode === 'ultimate'
         ? cloneUltimateState(room.ultimate ?? createUltimateState())
+        : null,
+    allegations:
+      mode === 'allegations'
+        ? publicAllegationsState(room.allegations, {
+            viewerMark: mark,
+            revealed: room.status === 'roundOver' || room.status === 'matchOver',
+          })
         : null,
     turn: room.turn,
     starter: room.starter,

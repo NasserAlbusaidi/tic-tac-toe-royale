@@ -5,6 +5,7 @@ import {
   timingSafeEqual,
 } from 'node:crypto'
 import {
+  applyAllegationVote,
   applyMove,
   appendChatMessage,
   assignParticipant,
@@ -172,6 +173,8 @@ export function createSocketHub({
         hostResumeTokenHash: credential.hash,
         totalRounds: payload?.totalRounds,
         gameMode: payload?.gameMode,
+        allegationsPack: payload?.allegationsPack,
+        allegationsTone: payload?.allegationsTone,
       })
 
       if (await store.create(candidate)) {
@@ -339,6 +342,11 @@ export function createSocketHub({
         case 'cell:play':
           await mutateGameRoom(socket, session, payload, message.requestId, (room, clientId) =>
             applyMove(room, clientId, payload.index, payload.boardIndex),
+          )
+          break
+        case 'allegation:vote':
+          await mutateGameRoom(socket, session, payload, message.requestId, (room, clientId) =>
+            applyAllegationVote(room, clientId, payload.target),
           )
           break
         case 'round:next':

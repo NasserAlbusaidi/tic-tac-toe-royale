@@ -31,6 +31,7 @@ function parseEventFields(fields) {
 export function createMemoryRoomStore() {
   const rooms = new Map()
   const listeners = new Set()
+  const mutationQueues = new Map()
 
   function publish(code) {
     for (const listener of listeners) {
@@ -58,22 +59,40 @@ export function createMemoryRoomStore() {
 
     async mutate(code, update) {
       const normalizedCode = normalizeCode(code)
-      const current = rooms.get(normalizedCode)
+      const previousMutation = mutationQueues.get(normalizedCode) ?? Promise.resolve()
+      let releaseMutation
+      const currentMutation = new Promise((resolve) => {
+        releaseMutation = resolve
+      })
+      const queueTail = previousMutation.then(() => currentMutation)
+      mutationQueues.set(normalizedCode, queueTail)
 
-      if (!current) {
-        return null
+      await previousMutation
+
+      try {
+        const current = rooms.get(normalizedCode)
+
+        if (!current) {
+          return null
+        }
+
+        const draft = clone(current)
+        const outcome = await update(draft)
+
+        if (outcome?.commit === false) {
+          return { room: clone(current), result: outcome.result }
+        }
+
+        rooms.set(normalizedCode, draft)
+        publish(normalizedCode)
+        return { room: clone(draft), result: outcome?.result }
+      } finally {
+        releaseMutation()
+
+        if (mutationQueues.get(normalizedCode) === queueTail) {
+          mutationQueues.delete(normalizedCode)
+        }
       }
-
-      const draft = clone(current)
-      const outcome = await update(draft)
-
-      if (outcome?.commit === false) {
-        return { room: clone(current), result: outcome.result }
-      }
-
-      rooms.set(normalizedCode, draft)
-      publish(normalizedCode)
-      return { room: clone(draft), result: outcome?.result }
     },
 
     subscribe(listener) {
@@ -84,6 +103,7 @@ export function createMemoryRoomStore() {
     async close() {
       rooms.clear()
       listeners.clear()
+      mutationQueues.clear()
     },
   }
 }

@@ -247,6 +247,147 @@ describe('socket hub', () => {
     )
   })
 
+  it('keeps pending Allegations votes private across broadcasts and reconnects', async () => {
+    hub = createSocketHub({
+      store: createMemoryRoomStore(),
+      instanceId: 'test-instance',
+    })
+    const host = new FakeSocket()
+    const guest = new FakeSocket()
+    const spectator = new FakeSocket()
+    hub.register(host)
+    hub.register(guest)
+    hub.register(spectator)
+
+    const created = await request(host, 'create-allegations', 'room:create', {
+      clientId: 'court-host-123',
+      name: 'Nasser',
+      totalRounds: 5,
+      gameMode: 'allegations',
+      allegationsPack: 'sensei',
+      allegationsTone: 'feral',
+    })
+    const roomCode = created.payload.room.code
+    await request(guest, 'join-allegations', 'room:join', {
+      clientId: 'court-guest-456',
+      name: 'Sara',
+      roomCode,
+    })
+    const watched = await request(spectator, 'watch-allegations', 'room:join', {
+      clientId: 'court-watcher-789',
+      name: 'Clerk',
+      roomCode,
+    })
+    await request(host, 'start-allegations', 'match:start', { roomCode })
+
+    const locked = await request(host, 'vote-allegations-host', 'allegation:vote', {
+      roomCode,
+      target: 'O',
+    })
+    expect(locked.payload.room.allegations.yourVote).toBe('O')
+    expect(locked.payload.room.allegations.revealedVotes).toBeNull()
+
+    const guestPending = await eventually(() =>
+      guest.sent
+        .filter((message) => message.type === 'room:state')
+        .map((message) => message.payload)
+        .findLast((room) => room.allegations?.submitted.X),
+    )
+    const spectatorPending = await eventually(() =>
+      spectator.sent
+        .filter((message) => message.type === 'room:state')
+        .map((message) => message.payload)
+        .findLast((room) => room.allegations?.submitted.X),
+    )
+    expect(guestPending.allegations.yourVote).toBeNull()
+    expect(guestPending.allegations.revealedVotes).toBeNull()
+    expect(spectatorPending.allegations.yourVote).toBeNull()
+    expect(spectatorPending.allegations.revealedVotes).toBeNull()
+    expect(JSON.stringify(spectatorPending)).not.toContain('promptOrder')
+
+    host.close()
+    const restoredHost = new FakeSocket()
+    hub.register(restoredHost)
+    const resumed = await request(restoredHost, 'resume-court-host', 'room:resume', {
+      clientId: 'court-host-123',
+      name: 'Nasser',
+      roomCode,
+      resumeToken: created.payload.resumeToken,
+    })
+    expect(resumed.payload.room.allegations.yourVote).toBe('O')
+    expect(resumed.payload.room.allegations.revealedVotes).toBeNull()
+
+    const resolved = await request(guest, 'vote-allegations-guest', 'allegation:vote', {
+      roomCode,
+      target: 'O',
+    })
+    expect(resolved.payload.room.allegations.charges).toEqual({ X: 0, O: 1 })
+    expect(resolved.payload.room.allegations.revealedVotes).toEqual({ X: 'O', O: 'O' })
+
+    const lateSpectator = new FakeSocket()
+    hub.register(lateSpectator)
+    const late = await request(lateSpectator, 'late-watch-allegations', 'room:join', {
+      clientId: 'late-watcher-987',
+      name: 'Late clerk',
+      roomCode,
+    })
+    expect(late.payload.room.allegations.cases).toHaveLength(1)
+    expect(late.payload.room.allegations.revealedVotes).toEqual({ X: 'O', O: 'O' })
+    expect(JSON.stringify(late.payload.room)).not.toContain('promptOrder')
+
+    const spectatorVote = await request(
+      spectator,
+      'spectator-vote-allegations',
+      'allegation:vote',
+      { roomCode, target: 'X', resumeToken: watched.payload.resumeToken },
+    )
+    expect(spectatorVote.payload).toEqual({
+      ok: false,
+      error: 'Voting is not open for this case.',
+    })
+  })
+
+  it('resolves nearly simultaneous Allegations votes exactly once', async () => {
+    const store = createMemoryRoomStore()
+    hub = createSocketHub({ store, instanceId: 'test-instance' })
+    const host = new FakeSocket()
+    const guest = new FakeSocket()
+    hub.register(host)
+    hub.register(guest)
+
+    const created = await request(host, 'create-simultaneous-court', 'room:create', {
+      clientId: 'simultaneous-host-123',
+      name: 'Nasser',
+      totalRounds: 5,
+      gameMode: 'allegations',
+    })
+    const roomCode = created.payload.room.code
+    await request(guest, 'join-simultaneous-court', 'room:join', {
+      clientId: 'simultaneous-guest-456',
+      name: 'Sara',
+      roomCode,
+    })
+    await request(host, 'start-simultaneous-court', 'match:start', { roomCode })
+
+    const [hostVote, guestVote] = await Promise.all([
+      request(host, 'simultaneous-vote-x', 'allegation:vote', {
+        roomCode,
+        target: 'X',
+      }),
+      request(guest, 'simultaneous-vote-o', 'allegation:vote', {
+        roomCode,
+        target: 'X',
+      }),
+    ])
+
+    expect(hostVote.payload.ok).toBe(true)
+    expect(guestVote.payload.ok).toBe(true)
+    const stored = await store.read(roomCode)
+    expect(stored.allegations.cases).toHaveLength(1)
+    expect(stored.allegations.charges).toEqual({ X: 1, O: 0 })
+    expect(stored.status).toBe('roundOver')
+  })
+
   it('lets spectators read room chat but rejects sending', async () => {
     hub = createSocketHub({
       store: createMemoryRoomStore(),
