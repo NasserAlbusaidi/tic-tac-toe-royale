@@ -1,5 +1,5 @@
 export type Mark = 'X' | 'O'
-export type GameMode = 'normal' | 'misere' | 'ultimate' | 'connect4'
+export type GameMode = 'normal' | 'misere' | 'ultimate' | 'connect4' | 'allegations'
 export type Winner = Mark | 'draw' | null
 export type RoomStatus = 'lobby' | 'playing' | 'roundOver' | 'matchOver'
 
@@ -9,6 +9,48 @@ export type UltimateState = {
   boards: (Mark | null)[][]
   claims: UltimateClaim[]
   targetBoard: number | null
+}
+
+export type AllegationsPack = 'general' | 'sensei' | 'mixed'
+export type AllegationsTone = 'friendly' | 'feral'
+export type AllegationOutcome = 'unanimous' | 'mutualSlander' | 'selfReport'
+
+export type PublicAllegationPrompt = {
+  id: string
+  text: string
+}
+
+export type AllegationCaseSummary = {
+  caseNumber: number
+  prompt: {
+    id: string
+    text: string
+    charge: string
+  }
+  votes: Record<Mark, Mark>
+  outcome: AllegationOutcome
+  charged: Mark | null
+  endedAt: string
+}
+
+export type AllegationVerdict = {
+  convicted: Mark | 'both' | 'none'
+  title: string
+  sentence: string
+  appealStatus: string
+}
+
+export type PublicAllegationsState = {
+  pack: AllegationsPack
+  tone: AllegationsTone
+  currentPrompt: PublicAllegationPrompt | null
+  charges: Record<Mark, number>
+  submitted: Record<Mark, boolean>
+  yourVote: Mark | null
+  revealedVotes: Record<Mark, Mark> | null
+  latestOutcome: AllegationOutcome | null
+  cases: AllegationCaseSummary[]
+  verdict: AllegationVerdict | null
 }
 
 export type PlayerState = {
@@ -54,6 +96,7 @@ export type RoomState = {
   status: RoomStatus
   board: (Mark | null)[]
   ultimate: UltimateState | null
+  allegations: PublicAllegationsState | null
   turn: Mark
   starter: Mark
   winner: Winner

@@ -5,7 +5,7 @@
 <h1 align="center">XO Royale</h1>
 
 <p align="center">
-  A polished, real-time table for Tic Tac Toe and Connect Four with friends.
+  A polished, real-time table for tactical boards and highly questionable verdicts with friends.
 </p>
 
 <p align="center">
@@ -30,15 +30,16 @@
 
 ## What is XO Royale?
 
-XO Royale turns classic grid games into a private browser table. Create a room,
-share the five-character code, and play from any modern browser—no account
-required.
+XO Royale turns tactical and social games into a private browser table. Create
+a room, share the five-character code, and play from any modern browser—no
+account required.
 
 It includes:
 
 - real-time private rooms for two players;
-- Normal, Misère, and Ultimate Tic Tac Toe plus Connect Four;
+- Normal, Misère, and Ultimate Tic Tac Toe, Connect Four, and The Allegations;
 - configurable best-of match lengths with scores and round history;
+- simultaneous sealed voting with per-player privacy and a final criminal record;
 - mobile-first controls without sacrificing the desktop table;
 - player chat, unread badges, a separate game log, and read-only spectators;
 - secure reload and reconnect using private server-issued resume tokens; and
@@ -52,6 +53,7 @@ It includes:
 | **Misère** | Making three in a row loses the round. |
 | **Ultimate** | Win small boards to claim the 3×3 meta grid. The cell you choose sends your opponent to the matching small board; if that board is closed, they may play anywhere. |
 | **Connect Four** | Drop discs into a 7-column board. The first player to connect four horizontally, vertically, or diagonally wins. |
+| **The Allegations** | Secretly accuse either suspect across 5, 7, or 9 curated cases. Matching votes award a charge; split verdicts create court chaos. The final record convicts one suspect, both, or nobody. |
 
 Ultimate moves use `board.cell` notation. For example, `5.3` means board 5,
 cell 3, and sends the next player to board 3.
@@ -71,6 +73,9 @@ flowchart LR
 ```
 
 - The server validates every move, turn, role, chat message, and room action.
+- Allegations votes are projected per viewer: players see only their own locked
+  target before reveal, spectators see neither target, and future prompts stay
+  server-only.
 - Production room state is shared through Redis and expires after six hours of
   inactivity.
 - Local development uses the same engine with an in-memory room store.
@@ -136,8 +141,9 @@ npm run smoke -- --url wss://your-project.vercel.app/api/ws
 ```
 
 The smoke test creates two temporary players, verifies the Ultimate
-`5.3 → board 3 → 3.1 → board 1` routing flow, then plays a complete Connect
-Four round through the same room protocol.
+`5.3 → board 3 → 3.1 → board 1` routing flow, plays a complete Connect Four
+round, then hears a five-case Allegations match containing unanimous verdicts,
+mutual slander, and self-report through the same room protocol.
 
 ## Deploy to Vercel
 
@@ -161,6 +167,8 @@ limit.
 
 - Player identities are protected with 256-bit resume tokens; only SHA-256
   token hashes are stored with the room.
+- Pending Allegations targets and future case order never appear in public room
+  payloads.
 - Chat is limited, rate-limited, scoped to the room, and readable by
   spectators. It is not end-to-end encrypted.
 - Room data and chat expire with the room after six hours of inactivity.

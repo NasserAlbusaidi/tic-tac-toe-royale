@@ -178,9 +178,96 @@ try {
     'Connect Four winning line was not recorded.',
   )
 
+  const allegationsCreated = await request(hostSocket, 'room:create', {
+    clientId: hostId,
+    name: 'Smoke Host',
+    totalRounds: 5,
+    gameMode: 'allegations',
+    allegationsPack: 'sensei',
+    allegationsTone: 'feral',
+  })
+  const allegationsRoomCode = allegationsCreated.room.code
+
+  await request(guestSocket, 'room:join', {
+    clientId: guestId,
+    name: 'Smoke Guest',
+    roomCode: allegationsRoomCode,
+  })
+  const allegationsStarted = await request(hostSocket, 'match:start', {
+    clientId: hostId,
+    roomCode: allegationsRoomCode,
+  })
+
+  assert(
+    allegationsStarted.room.allegations.currentPrompt?.text,
+    'Allegations did not open the first case.',
+  )
+  assert(
+    !JSON.stringify(allegationsStarted.room).includes('promptOrder'),
+    'Allegations exposed its future prompt order.',
+  )
+
+  const allegationPatterns = [
+    ['X', 'X'],
+    ['O', 'X'],
+    ['X', 'O'],
+    ['O', 'O'],
+    ['X', 'X'],
+  ]
+  let allegationsResult
+
+  for (const [index, [hostTarget, guestTarget]] of allegationPatterns.entries()) {
+    const locked = await request(hostSocket, 'allegation:vote', {
+      clientId: hostId,
+      roomCode: allegationsRoomCode,
+      target: hostTarget,
+    })
+
+    assert(locked.room.allegations.yourVote === hostTarget, 'Locked vote was not restored.')
+    assert(locked.room.allegations.revealedVotes === null, 'Opponent vote revealed early.')
+
+    allegationsResult = await request(guestSocket, 'allegation:vote', {
+      clientId: guestId,
+      roomCode: allegationsRoomCode,
+      target: guestTarget,
+    })
+
+    if (index < allegationPatterns.length - 1) {
+      await request(hostSocket, 'round:next', {
+        clientId: hostId,
+        roomCode: allegationsRoomCode,
+      })
+    }
+  }
+
+  assert(allegationsResult.room.status === 'matchOver', 'Allegations match did not end.')
+  assert(allegationsResult.room.allegations.cases.length === 5, 'Case history is incomplete.')
+  assert(
+    allegationsResult.room.allegations.charges.X === 2 &&
+      allegationsResult.room.allegations.charges.O === 1,
+    'Allegations charge count is incorrect.',
+  )
+  assert(
+    allegationsResult.room.allegations.cases.some(
+      (item) => item.outcome === 'mutualSlander',
+    ),
+    'Mutual slander was not recorded.',
+  )
+  assert(
+    allegationsResult.room.allegations.cases.some((item) => item.outcome === 'selfReport'),
+    'Self-report was not recorded.',
+  )
+  assert(
+    allegationsResult.room.allegations.verdict.convicted === 'X',
+    'Final Allegations verdict is incorrect.',
+  )
+
   console.log(`Smoke passed: ${targetUrl}`)
   console.log(`Room ${roomCode}: 5.3 → board 3 → 3.1 → board 1`)
   console.log(`Room ${connectFourRoomCode}: columns 1, 1, 2, 2, 3, 3, 4 → X wins`)
+  console.log(
+    `Room ${allegationsRoomCode}: five sealed cases → X charged twice → verdict recorded`,
+  )
 } finally {
   hostSocket?.close()
   guestSocket?.close()

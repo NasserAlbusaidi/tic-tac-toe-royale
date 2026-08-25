@@ -3,6 +3,8 @@ import {
   BarChart3,
   Copy,
   Crown,
+  Fingerprint,
+  Gavel,
   Grid3X3,
   ListOrdered,
   MessageCircle,
@@ -18,8 +20,18 @@ import {
   X as XIcon,
 } from 'lucide-react'
 import './App.css'
+import { AllegationsLobbyOptions } from './games/allegations/AllegationsLobbyOptions'
+import { AllegationsScorePanel } from './games/allegations/AllegationsScorePanel'
+import { AllegationsStage } from './games/allegations/AllegationsStage'
 import { RoomSocket, type ConnectionState } from './room-socket'
-import type { GameMode, Mark, RoomState, Winner } from './types'
+import type {
+  AllegationsPack,
+  AllegationsTone,
+  GameMode,
+  Mark,
+  RoomState,
+  Winner,
+} from './types'
 
 type LobbyMode = 'host' | 'join'
 type MobilePanel = 'scores' | 'chat' | null
@@ -61,6 +73,10 @@ function markLabel(mark: Mark | null, mode?: GameMode) {
     return mark === 'X' ? 'Brass discs' : 'Aqua discs'
   }
 
+  if (mode === 'allegations') {
+    return `Suspect ${mark}`
+  }
+
   return mark === 'X' ? 'Crosses' : 'Noughts'
 }
 
@@ -77,6 +93,10 @@ function modeLabel(mode: GameMode) {
     return 'Connect Four'
   }
 
+  if (mode === 'allegations') {
+    return 'The Allegations'
+  }
+
   return 'Normal'
 }
 
@@ -91,6 +111,10 @@ function modeSummary(mode: GameMode) {
 
   if (mode === 'connect4') {
     return 'Connect Four · link four discs'
+  }
+
+  if (mode === 'allegations') {
+    return 'The Allegations · sealed verdicts'
   }
 
   return 'Normal · three wins'
@@ -187,6 +211,10 @@ function App() {
   const [roomCode, setRoomCode] = useState(getInitialRoomCode())
   const [rounds, setRounds] = useState(5)
   const [gameMode, setGameMode] = useState<GameMode>('normal')
+  const [allegationsPack, setAllegationsPack] =
+    useState<AllegationsPack>('sensei')
+  const [allegationsTone, setAllegationsTone] =
+    useState<AllegationsTone>('feral')
   const [message, setMessage] = useState('')
   const [copied, setCopied] = useState(false)
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null)
@@ -345,6 +373,8 @@ function App() {
         name: playerName,
         totalRounds: rounds,
         gameMode,
+        allegationsPack,
+        allegationsTone,
       })
 
       if (!response.ok || !response.room || !response.resumeToken) {
@@ -477,7 +507,7 @@ function App() {
           <span className="brand-mark">XO</span>
           <span>
             <strong>XO Royale</strong>
-            <small>private match room</small>
+            <small>private game room</small>
           </span>
         </a>
 
@@ -509,7 +539,7 @@ function App() {
           <div className="welcome-copy">
             <span className="eyebrow">Browser table</span>
             <h1>Play a sharper table game.</h1>
-            <p>Private table. Classic, Misère, Ultimate, or Connect Four. Every move visible.</p>
+            <p>Private table. Four tactical boards—or one highly questionable courtroom.</p>
           </div>
 
           <div className="setup-panel">
@@ -580,23 +610,46 @@ function App() {
                       <span>Connect Four</span>
                       <small>Link four discs</small>
                     </button>
+                    <button
+                      className={gameMode === 'allegations' ? 'active allegations-rule-card' : 'allegations-rule-card'}
+                      type="button"
+                      onClick={() => {
+                        setGameMode('allegations')
+                        setRounds(7)
+                      }}
+                    >
+                      <Gavel size={17} aria-hidden="true" />
+                      <span>The Allegations</span>
+                      <small>Secretly decide who is guilty. Evidence is optional.</small>
+                    </button>
                   </div>
                 </fieldset>
-                <fieldset className="round-select">
-                  <legend>Rounds</legend>
-                  <div>
-                    {roundOptions.map((option) => (
-                      <button
-                        className={rounds === option ? 'active' : ''}
-                        key={option}
-                        type="button"
-                        onClick={() => setRounds(option)}
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </div>
-                </fieldset>
+                {gameMode === 'allegations' ? (
+                  <AllegationsLobbyOptions
+                    pack={allegationsPack}
+                    tone={allegationsTone}
+                    cases={rounds}
+                    onPack={setAllegationsPack}
+                    onTone={setAllegationsTone}
+                    onCases={setRounds}
+                  />
+                ) : (
+                  <fieldset className="round-select">
+                    <legend>Rounds</legend>
+                    <div>
+                      {roundOptions.map((option) => (
+                        <button
+                          className={rounds === option ? 'active' : ''}
+                          key={option}
+                          type="button"
+                          onClick={() => setRounds(option)}
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  </fieldset>
+                )}
                 <button className="primary-action" type="button" onClick={handleCreateRoom}>
                   <Play size={19} />
                   Create room
@@ -640,7 +693,10 @@ function App() {
           </div>
         </section>
       ) : (
-        <section className={`match-grid status-${room.status}`} aria-label={`Room ${room.code}`}>
+        <section
+          className={`match-grid status-${room.status} mode-${room.config.mode}`}
+          aria-label={`Room ${room.code}`}
+        >
           <aside className="room-panel">
             <div className="room-code">
               <span>Room</span>
@@ -670,9 +726,14 @@ function App() {
               <span>{modeLabel(room.config.mode)} rules</span>
               <span>
                 {room.config.totalRounds}{' '}
-                {room.config.totalRounds === 1 ? 'round' : 'rounds'}
+                {room.config.mode === 'allegations'
+                  ? room.config.totalRounds === 1 ? 'case' : 'cases'
+                  : room.config.totalRounds === 1 ? 'round' : 'rounds'}
               </span>
-              <span>Round {Math.min(room.currentRound, room.config.totalRounds)}</span>
+              <span>
+                {room.config.mode === 'allegations' ? 'Case' : 'Round'}{' '}
+                {Math.min(room.currentRound, room.config.totalRounds)}
+              </span>
               <span>{room.spectators.length} watching</span>
             </div>
 
@@ -687,11 +748,15 @@ function App() {
                   onClick={() => emitRoomEvent('match:start')}
                 >
                   <Play size={19} />
-                  {isWaitingForGuest ? 'Waiting for guest' : 'Start match'}
+                  {isWaitingForGuest
+                    ? 'Waiting for guest'
+                    : room.config.mode === 'allegations' ? 'Open court' : 'Start match'}
                 </button>
               ) : null}
 
-              {room.you.isHost && room.status === 'roundOver' ? (
+              {room.you.isHost &&
+              room.status === 'roundOver' &&
+              room.config.mode !== 'allegations' ? (
                 <button
                   className="primary-action"
                   type="button"
@@ -702,11 +767,17 @@ function App() {
                 </button>
               ) : null}
 
-              {room.you.isHost && room.status === 'matchOver' ? (
+              {room.you.isHost &&
+              room.status === 'matchOver' &&
+              room.config.mode !== 'allegations' ? (
                 <button
                   className="primary-action"
                   type="button"
-                  onClick={() => emitRoomEvent('match:reset', { totalRounds: rounds })}
+                  onClick={() =>
+                    emitRoomEvent('match:reset', {
+                      totalRounds: rounds,
+                    })
+                  }
                 >
                   <RotateCcw size={19} />
                   Reset table
@@ -734,6 +805,25 @@ function App() {
               />
             ) : null}
 
+            {room.config.mode === 'allegations' ? (
+              <AllegationsStage
+                room={room}
+                canVote={Boolean(
+                  connection === 'online' &&
+                    room.status === 'playing' &&
+                    room.you.mark &&
+                    room.players[room.you.mark]?.connected,
+                )}
+                onVote={(target) => emitRoomEvent('allegation:vote', { target })}
+                onNext={() => emitRoomEvent('round:next')}
+                onReset={() =>
+                  emitRoomEvent('match:reset', {
+                    totalRounds: room.config.totalRounds,
+                  })
+                }
+                onLeave={resetToLobby}
+              />
+            ) : (
             <div className={`board-live-content ${room.status === 'lobby' ? 'lobby-board-content' : ''}`}>
               <div className="match-status">
                 <span>{room.lastEvent}</span>
@@ -864,6 +954,7 @@ function App() {
                 </div>
               ) : null}
             </div>
+            )}
           </section>
 
           <DesktopRail
@@ -886,7 +977,14 @@ function App() {
               onAdvance={() =>
                 emitRoomEvent(
                   room.status === 'matchOver' ? 'match:reset' : 'round:next',
-                  room.status === 'matchOver' ? { totalRounds: rounds } : {},
+                  room.status === 'matchOver'
+                    ? {
+                        totalRounds:
+                          room.config.mode === 'allegations'
+                            ? room.config.totalRounds
+                            : rounds,
+                      }
+                    : {},
                 )
               }
             />
@@ -1096,12 +1194,16 @@ function PlayerTile({
 }) {
   return (
     <div
-      className={`player-tile mark-${mark.toLowerCase()}${mode === 'connect4' ? ' connect-four-player' : ''}`}
+      className={`player-tile mark-${mark.toLowerCase()}${mode === 'connect4' ? ' connect-four-player' : ''}${mode === 'allegations' ? ' allegations-player' : ''}`}
     >
-      <span>{mode === 'connect4' ? '●' : mark}</span>
+      <span>{mode === 'connect4' ? '●' : mode === 'allegations' ? <Fingerprint size={22} /> : mark}</span>
       <strong>{player?.name ?? 'Open seat'}</strong>
       <small>
-        {you ? 'You' : player?.connected ? 'Online' : player ? 'Disconnected' : 'Waiting'}
+        {you
+          ? `You · ${mode === 'allegations' ? `Suspect ${mark}` : markLabel(mark, mode)}`
+          : player?.connected
+            ? mode === 'allegations' ? `Suspect ${mark} · Online` : 'Online'
+            : player ? 'Disconnected' : 'Waiting'}
       </small>
     </div>
   )
@@ -1129,7 +1231,8 @@ function MobileMatchSummary({ room }: { room: RoomState }) {
         <div>
           <strong>Room {room.code}</strong>
           <small>
-            Round {Math.min(room.currentRound, room.config.totalRounds)} of{' '}
+            {room.config.mode === 'allegations' ? 'Case' : 'Round'}{' '}
+            {Math.min(room.currentRound, room.config.totalRounds)} of{' '}
             {room.config.totalRounds} · {room.spectators.length} watching
           </small>
         </div>
@@ -1148,7 +1251,9 @@ function MobileMatchSummary({ room }: { room: RoomState }) {
           </span>
         </div>
         <strong className="mobile-score">
-          {room.scores.X} – {room.scores.O}
+          {room.config.mode === 'allegations'
+            ? `${room.allegations?.charges.X ?? 0} – ${room.allegations?.charges.O ?? 0}`
+            : `${room.scores.X} – ${room.scores.O}`}
         </strong>
         <div className="mobile-player mobile-player-o">
           <span>
@@ -1181,9 +1286,17 @@ function MobileLobbyCard({
 }) {
   return (
     <div className="mobile-lobby-card">
-      <span className="eyebrow">Private match room</span>
-      <h1>Your table is ready.</h1>
-      <p>Share the code. The host starts when both seats are occupied.</p>
+      <span className="eyebrow">Private game room</span>
+      <h1>
+        {room.config.mode === 'allegations'
+          ? 'Court is waiting for the second suspect.'
+          : 'Your table is ready.'}
+      </h1>
+      <p>
+        {room.config.mode === 'allegations'
+          ? 'Share the room code. Evidence is optional.'
+          : 'Share the code. The host starts when both seats are occupied.'}
+      </p>
 
       <div className="mobile-invite-code">
         <div>
@@ -1221,7 +1334,9 @@ function MobileLobbyCard({
           <small>Match</small>
           <strong>
             {room.config.totalRounds}{' '}
-            {room.config.totalRounds === 1 ? 'round' : 'rounds'}
+            {room.config.mode === 'allegations'
+              ? room.config.totalRounds === 1 ? 'case' : 'cases'
+              : room.config.totalRounds === 1 ? 'round' : 'rounds'}
           </strong>
         </span>
       </div>
@@ -1234,7 +1349,9 @@ function MobileLobbyCard({
           onClick={onStart}
         >
           <Play size={18} />
-          {waiting ? 'Waiting for guest' : 'Start match'}
+          {waiting
+            ? 'Waiting for guest'
+            : room.config.mode === 'allegations' ? 'Open court' : 'Start match'}
         </button>
       ) : (
         <p className="mobile-waiting-note">The host controls the match.</p>
@@ -1248,6 +1365,10 @@ function MobileLobbyCard({
 }
 
 function ScoreContent({ room }: { room: RoomState }) {
+  if (room.config.mode === 'allegations') {
+    return <AllegationsScorePanel room={room} />
+  }
+
   return (
     <div className="score-content">
       <div className="score-card lead">
@@ -1511,7 +1632,10 @@ function MobileResultDock({
   onChat: () => void
   onAdvance: () => void
 }) {
-  const actionLabel = room.status === 'matchOver' ? 'Reset table' : 'Next round'
+  const actionLabel =
+    room.config.mode === 'allegations'
+      ? room.status === 'matchOver' ? 'Return to court' : 'Next case'
+      : room.status === 'matchOver' ? 'Reset table' : 'Next round'
 
   return (
     <div className="mobile-result-dock">
@@ -1574,7 +1698,7 @@ function MobileSheet({
             <h2>{panel === 'scores' ? 'Match ledger' : 'Table talk'}</h2>
             <p>
               {panel === 'scores'
-                ? `${modeLabel(room.config.mode)} rules · round ${Math.min(room.currentRound, room.config.totalRounds)} of ${room.config.totalRounds}`
+                ? `${modeLabel(room.config.mode)} rules · ${room.config.mode === 'allegations' ? 'case' : 'round'} ${Math.min(room.currentRound, room.config.totalRounds)} of ${room.config.totalRounds}`
                 : `Room ${room.code} · messages disappear with the room`}
             </p>
           </div>
