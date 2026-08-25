@@ -45,7 +45,7 @@
     "express": "^5.2.1",
     "ioredis": "^5.11.1",
     "lucide-react": "^1.22.0",
-    "nanoid": "^5.1.16",
+    "nanoid": "^6.0.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "ws": "^8.21.1"
