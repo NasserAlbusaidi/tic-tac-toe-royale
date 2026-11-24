@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://tic-tac-toe-royale.vercel.app/">
+  <a href="https://xo.nasser1931.com/">
     <img src="https://img.shields.io/badge/Play-Live-c8914a?style=for-the-badge" alt="Play XO Royale" />
   </a>
   <a href="https://github.com/NasserAlbusaidi/tic-tac-toe-royale/actions/workflows/ci.yml">
@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <a href="https://tic-tac-toe-royale.vercel.app/"><strong>Play the live game</strong></a>
+  <a href="https://xo.nasser1931.com/"><strong>Play the live game</strong></a>
   ·
   <a href="#game-modes">Game modes</a>
   ·
