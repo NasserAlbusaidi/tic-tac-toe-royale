@@ -29,6 +29,14 @@ export const gameModes = [
 export const CONNECT_FOUR_ROWS = 6
 export const CONNECT_FOUR_COLUMNS = 7
 export const CHAT_MESSAGE_LIMIT = 280
+// ':' is not allowed in client ids, so no socket can ever claim the bot's seat.
+export const BOT_ID = 'bot:claude'
+export const BOT_NAME = 'Claude'
+export const botLevels = ['easy', 'hard']
+
+export function normalizeBotLevel(value) {
+  return botLevels.includes(value) ? value : 'hard'
+}
 export const ROOM_CHAT_HISTORY_LIMIT = 50
 export const ROOM_GAME_LOG_LIMIT = 50
 export const winLines = [
@@ -272,6 +280,8 @@ export function createRoom({
   gameMode = 'normal',
   allegationsPack,
   allegationsTone,
+  opponent = 'friend',
+  botLevel,
   roomCode,
 } = {}) {
   if (!hostId) {
@@ -325,14 +335,31 @@ export function createRoom({
         true,
         hostResumeTokenHash,
       ),
-      O: null,
+      O:
+        opponent === 'bot'
+          ? {
+              id: BOT_ID,
+              connectionId: BOT_ID,
+              name: BOT_NAME,
+              mark: 'O',
+              isHost: false,
+              isBot: true,
+              connected: true,
+            }
+          : null,
     },
+    bot: opponent === 'bot' ? { level: normalizeBotLevel(botLevel) } : null,
     spectators: [],
     createdAt: new Date().toISOString(),
     lastEvent: 'Room opened',
   }
 
   appendGameLog(room, 'Room opened')
+
+  if (room.bot) {
+    appendGameLog(room, `${BOT_NAME} took the O seat on ${room.bot.level}.`)
+  }
+
   return room
 }
 
@@ -1001,6 +1028,7 @@ export function publicRoom(room, socketId) {
           name: player.name,
           mark: player.mark,
           isHost: player.isHost,
+          isBot: Boolean(player.isBot),
           connected: player.connected,
         }
       : null
@@ -1064,6 +1092,7 @@ export function publicRoom(room, socketId) {
         name: item.name,
         connected: item.connected,
       })),
+    bot: room.bot ? { level: normalizeBotLevel(room.bot.level) } : null,
     lastEvent: room.lastEvent,
     you: {
       mark,

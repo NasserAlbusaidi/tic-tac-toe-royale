@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Anchor,
   BarChart3,
+  Bot,
   Copy,
   Crown,
   Fingerprint,
@@ -30,8 +31,10 @@ import { RoomSocket, type ConnectionState } from './room-socket'
 import type {
   AllegationsPack,
   AllegationsTone,
+  BotLevel,
   GameMode,
   Mark,
+  Opponent,
   RoomState,
   Winner,
 } from './types'
@@ -118,6 +121,8 @@ function App() {
   const [roomCode, setRoomCode] = useState(getInitialRoomCode())
   const [rounds, setRounds] = useState(5)
   const [gameMode, setGameMode] = useState<GameMode>('normal')
+  const [opponent, setOpponent] = useState<Opponent>('friend')
+  const [botLevel, setBotLevel] = useState<BotLevel>('hard')
   const [allegationsPack, setAllegationsPack] =
     useState<AllegationsPack>('sensei')
   const [allegationsTone, setAllegationsTone] =
@@ -281,6 +286,8 @@ function App() {
         gameMode,
         allegationsPack,
         allegationsTone,
+        opponent,
+        botLevel,
       })
 
       if (!response.ok || !response.room || !response.resumeToken) {
@@ -541,6 +548,42 @@ function App() {
                       <small>Secretly decide who is guilty. Evidence is optional.</small>
                     </button>
                   </div>
+                </fieldset>
+                <fieldset className="opponent-select">
+                  <legend>Opponent</legend>
+                  <div>
+                    <button
+                      className={opponent === 'friend' ? 'active' : ''}
+                      type="button"
+                      onClick={() => setOpponent('friend')}
+                    >
+                      <Users size={17} aria-hidden="true" />
+                      <span>A friend</span>
+                    </button>
+                    <button
+                      className={opponent === 'bot' ? 'active' : ''}
+                      type="button"
+                      onClick={() => setOpponent('bot')}
+                    >
+                      <Bot size={17} aria-hidden="true" />
+                      <span>Claude</span>
+                    </button>
+                  </div>
+                  {opponent === 'bot' ? (
+                    <div className="bot-level" role="group" aria-label="Claude's difficulty">
+                      {(['easy', 'hard'] as const).map((level) => (
+                        <button
+                          className={botLevel === level ? 'active' : ''}
+                          key={level}
+                          type="button"
+                          onClick={() => setBotLevel(level)}
+                        >
+                          {level === 'easy' ? 'Easy' : 'Hard'}
+                          <small>{level === 'easy' ? 'Makes mistakes' : 'Plays to win'}</small>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </fieldset>
                 {gameMode === 'allegations' ? (
                   <AllegationsLobbyOptions
@@ -835,7 +878,9 @@ function PlayerTile({
       <small>
         {you
           ? `You · ${mode === 'allegations' ? `Suspect ${mark}` : markLabel(mark, mode)}`
-          : player?.connected
+          : player?.isBot
+            ? `Computer · ${markLabel(mark, mode)}`
+            : player?.connected
             ? mode === 'allegations' ? `Suspect ${mark} · Online` : 'Online'
             : player ? 'Disconnected' : 'Waiting'}
       </small>
