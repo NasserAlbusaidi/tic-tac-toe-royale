@@ -20,9 +20,11 @@ import {
   X as XIcon,
 } from 'lucide-react'
 import './App.css'
+import { BoardStage } from './games/board/BoardStage'
 import { AllegationsLobbyOptions } from './games/allegations/AllegationsLobbyOptions'
 import { AllegationsScorePanel } from './games/allegations/AllegationsScorePanel'
 import { AllegationsStage } from './games/allegations/AllegationsStage'
+import { markLabel, modeLabel, modeSummary } from './games/modes'
 import { RoomSocket, type ConnectionState } from './room-socket'
 import type {
   AllegationsPack,
@@ -39,8 +41,6 @@ type CommunicationTab = 'chat' | 'log'
 type DesktopRailTab = 'scores' | CommunicationTab
 
 const roundOptions = [1, 3, 5, 7, 9]
-const connectFourRows = 6
-const connectFourColumns = 7
 const chatMessageLimit = 280
 const savedNameKey = 'xo-royale-name'
 const clientIdKey = 'xo-royale-client-id'
@@ -62,100 +62,6 @@ function getClientId() {
   const clientId = crypto.randomUUID()
   window.sessionStorage.setItem(clientIdKey, clientId)
   return clientId
-}
-
-function markLabel(mark: Mark | null, mode?: GameMode) {
-  if (!mark) {
-    return 'Watching'
-  }
-
-  if (mode === 'connect4') {
-    return mark === 'X' ? 'Brass discs' : 'Aqua discs'
-  }
-
-  if (mode === 'allegations') {
-    return `Suspect ${mark}`
-  }
-
-  return mark === 'X' ? 'Crosses' : 'Noughts'
-}
-
-function modeLabel(mode: GameMode) {
-  if (mode === 'misere') {
-    return 'Misère'
-  }
-
-  if (mode === 'ultimate') {
-    return 'Ultimate'
-  }
-
-  if (mode === 'connect4') {
-    return 'Connect Four'
-  }
-
-  if (mode === 'allegations') {
-    return 'The Allegations'
-  }
-
-  return 'Normal'
-}
-
-function modeSummary(mode: GameMode) {
-  if (mode === 'misere') {
-    return 'Misère · three loses'
-  }
-
-  if (mode === 'ultimate') {
-    return 'Ultimate · claim three boards'
-  }
-
-  if (mode === 'connect4') {
-    return 'Connect Four · link four discs'
-  }
-
-  if (mode === 'allegations') {
-    return 'The Allegations · sealed verdicts'
-  }
-
-  return 'Normal · three wins'
-}
-
-function ultimateBoardIsPlayable(room: RoomState, boardIndex: number) {
-  const ultimate = room.ultimate
-
-  return Boolean(
-    ultimate &&
-      ultimate.claims[boardIndex] === null &&
-      ultimate.boards[boardIndex]?.some((cell) => cell === null),
-  )
-}
-
-function winnerText(room: RoomState) {
-  if (room.status === 'matchOver') {
-    if (room.matchWinner === 'draw') {
-      return 'Match level'
-    }
-
-    if (room.matchWinner) {
-      return `${room.players[room.matchWinner]?.name ?? room.matchWinner} takes the match`
-    }
-
-    return 'Match complete'
-  }
-
-  if (room.status === 'roundOver') {
-    if (room.winner === 'draw') {
-      return 'Round drawn'
-    }
-
-    return `${room.players[room.winner as Mark]?.name ?? room.winner} wins round ${room.currentRound}`
-  }
-
-  if (room.status === 'playing') {
-    return `${room.players[room.turn]?.name ?? room.turn} to move`
-  }
-
-  return 'Lobby open'
 }
 
 function scoreFor(room: RoomState, winner: Winner) {
@@ -350,7 +256,6 @@ function App() {
       room.players[room.you.mark]?.connected,
   )
 
-  const opponentMark = room?.you.mark === 'X' ? 'O' : room?.you.mark === 'O' ? 'X' : null
   const isWaitingForGuest = room?.status === 'lobby' && !room.players.O?.connected
 
   function rememberActiveRoom(nextRoomCode: string, resumeToken: string) {
@@ -824,136 +729,11 @@ function App() {
                 onLeave={resetToLobby}
               />
             ) : (
-            <div className={`board-live-content ${room.status === 'lobby' ? 'lobby-board-content' : ''}`}>
-              <div className="match-status">
-                <span>{room.lastEvent}</span>
-                <h2>{winnerText(room)}</h2>
-                <p>
-                  {room.config.mode === 'misere' ? 'Three in a row loses. ' : ''}
-                  {room.config.mode === 'ultimate'
-                    ? 'Claim three small boards in a row. '
-                    : ''}
-                  {room.config.mode === 'connect4'
-                    ? 'Drop discs into columns and connect four. '
-                    : ''}
-                  You are {markLabel(room.you.mark, room.config.mode)}
-                  {opponentMark
-                    ? ` against ${room.players[opponentMark]?.name ?? opponentMark}`
-                    : ''}
-                </p>
-              </div>
-
-              {room.config.mode === 'misere' && room.status === 'playing' ? (
-                <div className="misere-warning">
-                  Reverse pressure · completing any line loses the round
-                </div>
-              ) : null}
-
-              {room.config.mode === 'ultimate' && room.status === 'playing' ? (
-                <div className="ultimate-guidance">
-                  {room.ultimate?.targetBoard !== null &&
-                  room.ultimate?.targetBoard !== undefined &&
-                  ultimateBoardIsPlayable(room, room.ultimate.targetBoard)
-                    ? `Target board ${room.ultimate.targetBoard + 1} · moves use board.cell`
-                    : 'Open move · choose any unfinished board'}
-                </div>
-              ) : null}
-
-              {room.config.mode === 'connect4' && room.status === 'playing' ? (
-                <div className="connect-four-guidance">
-                  Choose an open column · the disc falls to the lowest space
-                </div>
-              ) : null}
-
-              {room.config.mode === 'connect4' ? (
-                <ConnectFourBoard
-                  room={room}
-                  canPlay={canPlay}
-                  onPlay={(column) => emitRoomEvent('cell:play', { index: column })}
-                />
-              ) : room.config.mode === 'ultimate' ? (
-                <UltimateBoard
-                  room={room}
-                  canPlay={canPlay}
-                  onPlay={(boardIndex, index) =>
-                    emitRoomEvent('cell:play', { boardIndex, index })
-                  }
-                />
-              ) : (
-                <div className={`board ${canPlay ? 'active-turn' : ''}`} role="grid">
-                  {room.board.map((cell, index) => (
-                    <button
-                      aria-label={`Cell ${index + 1}${cell ? ` ${cell}` : ''}`}
-                      className={[
-                        'cell',
-                        cell ? `mark-${cell.toLowerCase()}` : '',
-                        room.winningLine.includes(index)
-                          ? room.config.mode === 'misere'
-                            ? 'losing'
-                            : 'winning'
-                          : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
-                      disabled={!canPlay || Boolean(cell)}
-                      key={index}
-                      type="button"
-                      onClick={() => emitRoomEvent('cell:play', { index })}
-                    >
-                      {cell}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <div className="round-track" aria-label="Round track">
-                {Array.from({ length: room.config.totalRounds }, (_, index) => {
-                  const round = room.rounds[index]
-                  const active =
-                    index + 1 === room.currentRound && room.status === 'playing'
-
-                  return (
-                    <span
-                      className={[
-                        'round-dot',
-                        active ? 'active' : '',
-                        round?.winner === 'X' ? 'x-win' : '',
-                        round?.winner === 'O' ? 'o-win' : '',
-                        round?.winner === 'draw' ? 'draw' : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
-                      key={index}
-                      title={
-                        round ? `Round ${round.round}: ${round.winner}` : `Round ${index + 1}`
-                      }
-                    />
-                  )
-                })}
-              </div>
-              <div className="round-caption">
-                <span>
-                  Round {Math.min(room.currentRound, room.config.totalRounds)} of{' '}
-                  {room.config.totalRounds}
-                </span>
-                <span>{room.status === 'playing' ? 'Match in progress' : room.lastEvent}</span>
-              </div>
-
-              {room.status === 'roundOver' || room.status === 'matchOver' ? (
-                <div className="mobile-result-card">
-                  <strong>
-                    {room.status === 'matchOver'
-                      ? `${room.scores.X} – ${room.scores.O} final`
-                      : `Score ${room.scores.X} – ${room.scores.O}`}
-                  </strong>
-                  <small>
-                    {room.status === 'matchOver'
-                      ? 'The table is ready for a reset.'
-                      : 'The host controls the next round.'}
-                  </small>
-                </div>
-              ) : null}
-            </div>
+              <BoardStage
+                room={room}
+                canPlay={canPlay}
+                onMove={(move) => emitRoomEvent('cell:play', move)}
+              />
             )}
           </section>
 
@@ -1018,166 +798,6 @@ function App() {
         </section>
       )}
     </main>
-  )
-}
-
-function ConnectFourBoard({
-  room,
-  canPlay,
-  onPlay,
-}: {
-  room: RoomState
-  canPlay: boolean
-  onPlay: (column: number) => void
-}) {
-  const landingIndex = (column: number) => {
-    for (let row = connectFourRows - 1; row >= 0; row -= 1) {
-      const index = row * connectFourColumns + column
-
-      if (!room.board[index]) {
-        return index
-      }
-    }
-
-    return -1
-  }
-
-  return (
-    <div className="connect-four-shell">
-      <div className="connect-four-column-labels" aria-hidden="true">
-        {Array.from({ length: connectFourColumns }, (_, column) => (
-          <span key={column}>{column + 1}</span>
-        ))}
-      </div>
-      <div
-        className={`connect-four-board ${canPlay ? 'active-turn' : ''}`}
-        role="group"
-        aria-label="Connect Four board. Choose a column from 1 through 7."
-      >
-        {Array.from({ length: connectFourColumns }, (_, column) => {
-          const landing = landingIndex(column)
-
-          return (
-            <button
-              aria-label={
-                landing < 0
-                  ? `Column ${column + 1}, full`
-                  : `Drop ${markLabel(room.turn, room.config.mode)} in column ${column + 1}`
-              }
-              className="connect-four-column"
-              disabled={!canPlay || landing < 0}
-              key={column}
-              type="button"
-              onClick={() => onPlay(column)}
-            >
-              {Array.from({ length: connectFourRows }, (_, row) => {
-                const index = row * connectFourColumns + column
-                const mark = room.board[index]
-
-                return (
-                  <span
-                    className={[
-                      'connect-four-slot',
-                      index === landing && canPlay ? 'landing-slot' : '',
-                      room.winningLine.includes(index) ? 'winning' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    key={row}
-                    aria-hidden="true"
-                  >
-                    {mark ? (
-                      <span className={`connect-four-disc mark-${mark.toLowerCase()}`} />
-                    ) : null}
-                  </span>
-                )
-              })}
-            </button>
-          )
-        })}
-      </div>
-      <div className="connect-four-foot" aria-hidden="true" />
-    </div>
-  )
-}
-
-function UltimateBoard({
-  room,
-  canPlay,
-  onPlay,
-}: {
-  room: RoomState
-  canPlay: boolean
-  onPlay: (boardIndex: number, index: number) => void
-}) {
-  const ultimate = room.ultimate
-
-  if (!ultimate) {
-    return <p className="system-message">Ultimate board state is unavailable.</p>
-  }
-
-  const targetBoard =
-    ultimate.targetBoard !== null &&
-    ultimateBoardIsPlayable(room, ultimate.targetBoard)
-      ? ultimate.targetBoard
-      : null
-
-  return (
-    <div
-      className={`ultimate-board ${canPlay ? 'active-turn' : ''}`}
-      role="group"
-      aria-label="Ultimate Tic Tac Toe board"
-    >
-      {ultimate.boards.map((board, boardIndex) => {
-        const claim = ultimate.claims[boardIndex]
-        const playable = ultimateBoardIsPlayable(room, boardIndex)
-        const available = playable && (targetBoard === null || targetBoard === boardIndex)
-
-        return (
-          <section
-            aria-label={`Board ${boardIndex + 1}${claim ? ` claimed ${claim}` : ''}`}
-            className={[
-              'ultimate-mini-board',
-              available ? 'available' : '',
-              targetBoard === boardIndex ? 'target-board' : '',
-              claim === 'X' ? 'claimed-x' : '',
-              claim === 'O' ? 'claimed-o' : '',
-              claim === 'draw' ? 'claimed-draw' : '',
-              room.winningLine.includes(boardIndex) ? 'ultimate-winning' : '',
-            ]
-              .filter(Boolean)
-              .join(' ')}
-            key={boardIndex}
-          >
-            <span className="ultimate-board-number">{boardIndex + 1}</span>
-            <div className="ultimate-mini-grid" role="grid">
-              {board.map((cell, index) => (
-                <button
-                  aria-label={`Board ${boardIndex + 1}, cell ${index + 1}${cell ? `, ${cell}` : ''}`}
-                  className={[
-                    'ultimate-cell',
-                    cell ? `mark-${cell.toLowerCase()}` : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  disabled={!canPlay || !available || Boolean(cell)}
-                  key={index}
-                  type="button"
-                  onClick={() => onPlay(boardIndex, index)}
-                >
-                  {cell ?? <span>{index + 1}</span>}
-                </button>
-              ))}
-            </div>
-            {claim ? (
-              <span className="ultimate-claim" aria-hidden="true">
-                {claim === 'draw' ? '—' : claim}
-              </span>
-            ) : null}
-          </section>
-        )
-      })}
-    </div>
   )
 }
 
