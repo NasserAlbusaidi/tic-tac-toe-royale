@@ -1,0 +1,148 @@
+.match-status {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 100%);
+  text-align: center;
+  margin-bottom: 22px;
+}
+
+.match-status span {
+  color: var(--brass);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.match-status h2 {
+  margin: 8px 0;
+  color: var(--paper);
+  font-family: var(--display);
+  font-size: 54px;
+  font-weight: 400;
+  line-height: 0.94;
+}
+
+.round-track {
+  width: min(520px, 100%);
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.round-dot {
+  height: 9px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.round-dot.active {
+  background: var(--paper);
+}
+
+.round-dot.x-win {
+  background: var(--brass);
+}
+
+.round-dot.o-win {
+  background: var(--aqua);
+}
+
+.round-dot.draw {
+  background: var(--red);
+}
+
+@media (max-width: 680px) {
+  .match-status h2 {
+    font-size: 38px;
+  }
+}
+
+.board-live-content {
+  width: 100%;
+  display: grid;
+  justify-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 760px) {
+  .board-live-content {
+    display: grid;
+  }
+
+  .board-live-content.lobby-board-content {
+    display: none;
+  }
+
+  .match-status {
+    margin-bottom: 0;
+  }
+
+  .match-status span {
+    font-size: 8px;
+    letter-spacing: 0.1em;
+  }
+
+  .match-status h2 {
+    margin: 5px 0 3px;
+    font-size: clamp(30px, 9vw, 36px);
+  }
+
+  .match-status p {
+    margin: 0;
+    font-size: 8px;
+  }
+
+  .round-track {
+    width: min(100%, 337px);
+    gap: 7px;
+    margin-top: 14px;
+  }
+
+  .round-dot {
+    height: 8px;
+  }
+
+  .round-caption {
+    width: min(100%, 337px);
+    margin-top: 8px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 7px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .round-caption span:last-child {
+    overflow: hidden;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-result-card {
+    width: min(100%, 326px);
+    margin-top: 12px;
+    padding: 11px;
+    display: grid;
+    gap: 3px;
+    border: 1px solid rgba(200, 145, 74, 0.42);
+    border-radius: 9px;
+    background: rgba(200, 145, 74, 0.1);
+    text-align: center;
+  }
+
+  .mobile-result-card strong {
+    font-family: var(--display);
+    font-size: 25px;
+    font-weight: 400;
+  }
+
+  .mobile-result-card small {
+    color: var(--muted);
+    font-size: 8px;
+  }
+}
