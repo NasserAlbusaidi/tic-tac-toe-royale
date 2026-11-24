@@ -17,6 +17,7 @@ import {
   resetMatch,
   startMatch,
 } from './game-engine.mjs'
+import { runBotTurn } from './bot.mjs'
 import { createRoomStore } from './room-store.mjs'
 
 const validClientId = /^[A-Za-z0-9_-]{8,64}$/
@@ -127,9 +128,41 @@ function verifyResumeToken(participant, token) {
 export function createSocketHub({
   store = createRoomStore(),
   instanceId = randomUUID(),
+  botDelayMs = 650,
+  random = Math.random,
 } = {}) {
   const sockets = new Map()
+  const botTimers = new Map()
   let unsubscribe = null
+
+  // The bot plays after a short pause so its move reads as a move, not a
+  // glitch. It runs on whichever instance handled the human's action, and
+  // again on join/resume in case an instance died with a turn pending.
+  function scheduleBot(roomCode) {
+    if (botTimers.has(roomCode)) {
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const mutation = await store.mutate(roomCode, (room) => {
+          const result = runBotTurn(room, { random })
+          return { commit: result.acted, result }
+        })
+
+        botTimers.delete(roomCode)
+
+        if (mutation?.result.acted) {
+          await broadcastRoom(roomCode)
+          scheduleBot(roomCode)
+        }
+      } catch {
+        botTimers.delete(roomCode)
+      }
+    }, botDelayMs)
+
+    botTimers.set(roomCode, timer)
+  }
 
   async function broadcastRoom(roomCode) {
     const room = await store.read(roomCode)
@@ -176,6 +209,8 @@ export function createSocketHub({
         gameMode: payload?.gameMode,
         allegationsPack: payload?.allegationsPack,
         allegationsTone: payload?.allegationsTone,
+        opponent: payload?.opponent === 'bot' ? 'bot' : 'friend',
+        botLevel: payload?.botLevel,
       })
 
       if (await store.create(candidate)) {
@@ -273,6 +308,10 @@ export function createSocketHub({
       room: publicRoom(mutation.room, identity.clientId),
     })
     await broadcastRoom(roomCode)
+
+    if (mutation.room.bot) {
+      scheduleBot(roomCode)
+    }
   }
 
   async function mutateGameRoom(socket, session, payload, requestId, update) {
@@ -303,6 +342,10 @@ export function createSocketHub({
       room: publicRoom(mutation.room, session.clientId),
     })
     await broadcastRoom(roomCode)
+
+    if (mutation.room.bot) {
+      scheduleBot(roomCode)
+    }
   }
 
   function enforceChatRateLimit(session) {
@@ -436,6 +479,12 @@ export function createSocketHub({
   }
 
   async function close() {
+    for (const timer of botTimers.values()) {
+      clearTimeout(timer)
+    }
+
+    botTimers.clear()
+
     if (unsubscribe) {
       unsubscribe()
       unsubscribe = null

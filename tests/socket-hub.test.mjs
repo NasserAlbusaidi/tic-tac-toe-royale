@@ -247,6 +247,50 @@ describe('socket hub', () => {
     )
   })
 
+  it('lets the computer opponent answer moves and keeps its seat unclaimable', async () => {
+    hub = createSocketHub({
+      store: createMemoryRoomStore(),
+      instanceId: 'test-instance',
+      botDelayMs: 0,
+    })
+    const host = new FakeSocket()
+    const intruder = new FakeSocket()
+    hub.register(host)
+    hub.register(intruder)
+
+    const created = await request(host, 'create-bot', 'room:create', {
+      clientId: 'bot-room-host-123',
+      name: 'Host',
+      totalRounds: 1,
+      gameMode: 'normal',
+      opponent: 'bot',
+      botLevel: 'hard',
+    })
+    const roomCode = created.payload.room.code
+    expect(created.payload.room.players.O).toMatchObject({ name: 'Claude', isBot: true, connected: true })
+    expect(created.payload.room.bot).toEqual({ level: 'hard' })
+
+    const hijack = await request(intruder, 'hijack-bot', 'room:join', {
+      clientId: 'bot:claude',
+      name: 'Not Claude',
+      roomCode,
+    })
+    expect(hijack.payload.ok).toBe(false)
+
+    await request(host, 'start-bot', 'match:start', { roomCode })
+    await request(host, 'move-bot', 'cell:play', { roomCode, index: 0 })
+
+    const answered = await eventually(() =>
+      host.sent.find(
+        (message) =>
+          message.type === 'room:state' &&
+          message.payload.board.filter((cell) => cell === 'O').length === 1,
+      ),
+    )
+    expect(answered.payload.turn).toBe('X')
+    expect(answered.payload.board[4]).toBe('O')
+  })
+
   it('keeps Sea Battle fleets private across broadcasts and plays a shot', async () => {
     hub = createSocketHub({
       store: createMemoryRoomStore(),

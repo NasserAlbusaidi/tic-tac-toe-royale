@@ -102,8 +102,12 @@ export type PlayerState = {
   name: string
   mark: Mark
   isHost: boolean
+  isBot?: boolean
   connected: boolean
 }
+
+export type Opponent = 'friend' | 'bot'
+export type BotLevel = 'easy' | 'hard'
 
 export type RoundSummary = {
   round: number
@@ -165,6 +169,7 @@ export type RoomState = {
     name: string
     connected: boolean
   }>
+  bot: { level: BotLevel } | null
   lastEvent: string
   you: {
     mark: Mark | null

@@ -56,6 +56,23 @@ It includes:
 | **Sea Battle** | Each player secretly places five ships (sizes 5, 4, 3, 3, 2) on a 10×10 grid, then you take turns firing one shot each. Sunk ships are revealed; the first to sink the whole enemy fleet wins the round. |
 | **The Allegations** | Secretly accuse either suspect across 5, 7, or 9 curated cases. Matching votes award a charge; split verdicts create court chaos. The final record convicts one suspect, both, or nobody. |
 
+### Playing Claude
+
+Hosts can pick **Claude** as the opponent instead of a friend. Claude takes the
+O seat on the server and plays every mode on two levels:
+
+| Mode | Hard | Easy |
+| --- | --- | --- |
+| Normal, Misère | Full minimax: never loses | Random move about half the time |
+| Connect Four | Alpha-beta search, 6 plies | 1 ply, sometimes random |
+| Ultimate | Two-ply search on board and meta-line evaluation | Random, grabs boards when it can |
+| Sea Battle | Probability-density targeting from public shots only | Random hunt, sometimes follows up hits |
+| The Allegations | Sealed random verdicts | Same |
+
+The bot only reads what its seat could see: Sea Battle targeting works from
+the public projection, never the hidden fleet. Its id contains a character
+client ids cannot, so no socket can claim the seat.
+
 Ultimate moves use `board.cell` notation. For example, `5.3` means board 5,
 cell 3, and sends the next player to board 3.
 
