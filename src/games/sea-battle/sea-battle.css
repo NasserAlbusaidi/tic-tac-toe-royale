@@ -1,0 +1,397 @@
+.sea-battle-guidance {
+  width: min(560px, 100%);
+  margin: -7px 0 16px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--aqua);
+  background: rgba(103, 217, 197, 0.08);
+  color: var(--paper);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.sea-battle,
+.fleet-planner {
+  position: relative;
+  z-index: 1;
+  width: min(600px, 100%);
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 196px;
+  gap: 18px;
+  align-items: start;
+}
+
+.sea-battle.spectating {
+  grid-template-columns: 1fr 1fr;
+}
+
+.sea-side {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.sea-panel {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  background: rgba(10, 30, 26, 0.55);
+}
+
+.sea-panel.active-turn {
+  border-color: var(--aqua);
+  box-shadow: 0 0 0 1px rgba(103, 217, 197, 0.25), 0 18px 50px rgba(0, 0, 0, 0.3);
+}
+
+.sea-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 10px;
+  margin-bottom: 8px;
+}
+
+.sea-panel-head strong {
+  color: var(--paper);
+  font-size: 13px;
+}
+
+.sea-panel-head small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.sea-panel.active-turn .sea-panel-head small {
+  color: var(--aqua);
+  font-weight: 700;
+}
+
+.sea-grid {
+  display: grid;
+  grid-template-columns: 16px repeat(10, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.sea-row {
+  display: contents;
+}
+
+.sea-axis {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.sea-cell {
+  position: relative;
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: rgba(103, 217, 197, 0.07);
+  color: inherit;
+  cursor: default;
+}
+
+.sea-cell:not(:disabled) {
+  cursor: crosshair;
+}
+
+.sea-cell:not(:disabled):hover {
+  background: rgba(103, 217, 197, 0.28);
+}
+
+.fleet-planner .sea-cell:not(:disabled) {
+  cursor: pointer;
+}
+
+.sea-cell.ship {
+  background: rgba(245, 239, 226, 0.62);
+}
+
+.sea-cell.ship-revealed {
+  background: rgba(245, 239, 226, 0.16);
+  outline: 1px dashed rgba(245, 239, 226, 0.45);
+  outline-offset: -2px;
+}
+
+.sea-cell.ship-sunk {
+  background: rgba(219, 107, 92, 0.42);
+}
+
+.sea-cell.ship-draft {
+  background: var(--brass);
+}
+
+.sea-cell.ship-preview {
+  background: rgba(103, 217, 197, 0.55);
+}
+
+.sea-cell.ship-invalid {
+  background: rgba(219, 107, 92, 0.55);
+}
+
+.sea-cell.ship-h.ship-start {
+  border-top-left-radius: 9px;
+  border-bottom-left-radius: 9px;
+}
+
+.sea-cell.ship-h.ship-end {
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+
+.sea-cell.ship-v.ship-start {
+  border-top-left-radius: 9px;
+  border-top-right-radius: 9px;
+}
+
+.sea-cell.ship-v.ship-end {
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+
+.shot-mark {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.shot-miss .shot-mark::after {
+  content: '';
+  width: 26%;
+  height: 26%;
+  border-radius: 50%;
+  background: rgba(245, 239, 226, 0.5);
+}
+
+.shot-hit .shot-mark::before,
+.shot-hit .shot-mark::after {
+  content: '';
+  position: absolute;
+  width: 62%;
+  height: 16%;
+  border-radius: 2px;
+  background: var(--red);
+  transform: rotate(45deg);
+}
+
+.shot-hit .shot-mark::after {
+  transform: rotate(-45deg);
+}
+
+.sea-cell.shot-hit:not(.ship) {
+  background: rgba(219, 107, 92, 0.2);
+}
+
+.sea-cell.ship-sunk.shot-hit .shot-mark::before,
+.sea-cell.ship-sunk.shot-hit .shot-mark::after {
+  background: var(--paper);
+}
+
+.sea-cell.last-shot {
+  box-shadow: 0 0 0 2px var(--brass);
+  z-index: 1;
+}
+
+.fleet-roster {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.fleet-roster > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.fleet-roster ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fleet-roster li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--paper);
+  font-size: 12px;
+}
+
+.fleet-roster li.sunk {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.fleet-roster li small {
+  margin-left: auto;
+  color: var(--red);
+  font-size: 10px;
+  font-weight: 800;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.fleet-roster i,
+.planner-ships i {
+  display: inline-flex;
+  gap: 2px;
+  width: 52px;
+}
+
+.fleet-roster b,
+.planner-ships b {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  background: rgba(245, 239, 226, 0.7);
+}
+
+.fleet-roster li.sunk b {
+  background: var(--red);
+}
+
+.planner-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.planner-ships {
+  display: grid;
+  gap: 6px;
+}
+
+.planner-ships button,
+.planner-actions button {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--paper);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.planner-ships button.active {
+  border-color: var(--aqua);
+  background: rgba(103, 217, 197, 0.14);
+}
+
+.planner-ships button.placed:not(.active) {
+  color: var(--muted);
+}
+
+.planner-ships button.placed b {
+  background: var(--brass);
+}
+
+.planner-ships button svg {
+  margin-left: auto;
+  color: var(--aqua);
+}
+
+.planner-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.planner-actions button:first-child {
+  grid-column: 1 / -1;
+}
+
+.planner-actions button {
+  justify-content: center;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+.planner-actions button:disabled,
+.fleet-planner .primary-action:disabled {
+  opacity: 0.45;
+}
+
+.planner-actions kbd {
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+}
+
+.rule-select .seabattle-rule-card {
+  grid-column: 1 / -1;
+  min-height: 60px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  border-color: rgba(103, 217, 197, 0.4);
+  background:
+    linear-gradient(105deg, rgba(103, 217, 197, 0.12), transparent 55%),
+    rgba(255, 255, 255, 0.035);
+}
+
+.rule-select .seabattle-rule-card small {
+  width: 100%;
+  text-align: center;
+}
+
+.mode-seabattle .board-stage {
+  align-content: start;
+}
+
+@media (max-width: 760px) {
+  .sea-battle,
+  .fleet-planner,
+  .sea-battle.spectating {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .sea-battle .secondary {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .sea-battle .secondary .sea-panel {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: min(280px, 100%);
+  }
+
+  .planner-ships {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  }
+
+  .planner-actions {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .planner-actions button:first-child {
+    grid-column: auto;
+  }
+
+  .sea-battle-guidance {
+    margin: -4px 0 10px;
+    font-size: 10px;
+  }
+}

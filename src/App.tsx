@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Anchor,
   BarChart3,
   Copy,
   Crown,
@@ -444,7 +445,7 @@ function App() {
           <div className="welcome-copy">
             <span className="eyebrow">Browser table</span>
             <h1>Play a sharper table game.</h1>
-            <p>Private table. Four tactical boards—or one highly questionable courtroom.</p>
+            <p>Private table. Five tactical boards—or one highly questionable courtroom.</p>
           </div>
 
           <div className="setup-panel">
@@ -514,6 +515,18 @@ function App() {
                     >
                       <span>Connect Four</span>
                       <small>Link four discs</small>
+                    </button>
+                    <button
+                      className={gameMode === 'seabattle' ? 'active seabattle-rule-card' : 'seabattle-rule-card'}
+                      type="button"
+                      onClick={() => {
+                        setGameMode('seabattle')
+                        setRounds(1)
+                      }}
+                    >
+                      <Anchor size={17} aria-hidden="true" />
+                      <span>Sea Battle</span>
+                      <small>Hide five ships, then hunt theirs one shot at a time.</small>
                     </button>
                     <button
                       className={gameMode === 'allegations' ? 'active allegations-rule-card' : 'allegations-rule-card'}
@@ -733,6 +746,7 @@ function App() {
                 room={room}
                 canPlay={canPlay}
                 onMove={(move) => emitRoomEvent('cell:play', move)}
+                onPlaceFleet={(ships) => emitRoomEvent('fleet:place', { ships })}
               />
             )}
           </section>
@@ -1025,7 +1039,9 @@ function ScoreContent({ room }: { room: RoomState }) {
               <small>
                 {round.completedBy && room.config.mode === 'misere'
                   ? `${round.completedBy} made three`
-                  : `${round.moves} moves`}
+                  : room.config.mode === 'seabattle'
+                    ? `${round.moves} shots`
+                    : `${round.moves} moves`}
               </small>
             </div>
           ))

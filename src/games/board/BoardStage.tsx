@@ -1,9 +1,10 @@
 import { ConnectFourBoard } from '../connect-four/ConnectFourBoard'
 import { markLabel } from '../modes'
+import { SeaBattleBoard } from '../sea-battle/SeaBattleBoard'
 import { TicTacToeBoard } from '../tic-tac-toe/TicTacToeBoard'
 import { ultimateBoardIsPlayable } from '../ultimate/playable'
 import { UltimateBoard } from '../ultimate/UltimateBoard'
-import type { Mark, RoomState } from '../../types'
+import type { Mark, RoomState, ShipPlacement } from '../../types'
 import './board-stage.css'
 
 export type BoardMove = { index: number; boardIndex?: number }
@@ -30,24 +31,30 @@ function winnerText(room: RoomState) {
   }
 
   if (room.status === 'playing') {
-    return `${room.players[room.turn]?.name ?? room.turn} to move`
+    if (room.seabattle?.phase === 'placing') {
+      return 'Deploy your fleet'
+    }
+
+    return `${room.players[room.turn]?.name ?? room.turn} to ${room.seabattle ? 'fire' : 'move'}`
   }
 
   return 'Lobby open'
 }
 
 /**
- * Stage for the four board games (Normal, Misère, Ultimate, Connect Four):
+ * Stage for the board games (Normal, Misère, Ultimate, Connect Four, Sea Battle):
  * status header, mode guidance, the board itself, round track and result card.
  */
 export function BoardStage({
   room,
   canPlay,
   onMove,
+  onPlaceFleet,
 }: {
   room: RoomState
   canPlay: boolean
   onMove: (move: BoardMove) => void
+  onPlaceFleet: (ships: ShipPlacement[]) => void
 }) {
   const opponentMark = room.you.mark === 'X' ? 'O' : room.you.mark === 'O' ? 'X' : null
 
@@ -63,6 +70,9 @@ export function BoardStage({
             : ''}
           {room.config.mode === 'connect4'
             ? 'Drop discs into columns and connect four. '
+            : ''}
+          {room.config.mode === 'seabattle'
+            ? 'Sink every hidden ship before yours go down. '
             : ''}
           You are {markLabel(room.you.mark, room.config.mode)}
           {opponentMark
@@ -93,7 +103,22 @@ export function BoardStage({
         </div>
       ) : null}
 
-      {room.config.mode === 'connect4' ? (
+      {room.config.mode === 'seabattle' && room.status === 'playing' ? (
+        <div className="sea-battle-guidance">
+          {room.seabattle?.phase === 'placing'
+            ? 'Place five ships in secret · they may touch, not overlap'
+            : 'One shot per turn · sunk ships are revealed'}
+        </div>
+      ) : null}
+
+      {room.config.mode === 'seabattle' ? (
+        <SeaBattleBoard
+          room={room}
+          canFire={canPlay}
+          onFire={(index) => onMove({ index })}
+          onPlaceFleet={onPlaceFleet}
+        />
+      ) : room.config.mode === 'connect4' ? (
         <ConnectFourBoard
           room={room}
           canPlay={canPlay}

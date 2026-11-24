@@ -37,7 +37,7 @@
     "lint": "oxlint",
     "test": "vitest run",
     "smoke": "node scripts/smoke.mjs",
-    "check": "npm run lint && npm run test && npm run build && node --check server/index.mjs && node --check server/allegations-content.mjs && node --check server/allegations-engine.mjs && node --check server/game-engine.mjs && node --check server/room-store.mjs && node --check server/socket-hub.mjs && node --check api/ws.mjs && node --check api/health.mjs && node --check scripts/smoke.mjs",
+    "check": "npm run lint && npm run test && npm run build && node --check server/index.mjs && node --check server/allegations-content.mjs && node --check server/allegations-engine.mjs && node --check server/seabattle-engine.mjs && node --check server/game-engine.mjs && node --check server/room-store.mjs && node --check server/socket-hub.mjs && node --check api/ws.mjs && node --check api/health.mjs && node --check scripts/smoke.mjs",
     "preview": "npm run build && node --env-file-if-exists=.env.local server/index.mjs --production"
   },
   "dependencies": {

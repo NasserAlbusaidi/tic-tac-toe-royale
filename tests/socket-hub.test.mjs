@@ -247,6 +247,61 @@ describe('socket hub', () => {
     )
   })
 
+  it('keeps Sea Battle fleets private across broadcasts and plays a shot', async () => {
+    hub = createSocketHub({
+      store: createMemoryRoomStore(),
+      instanceId: 'test-instance',
+    })
+    const host = new FakeSocket()
+    const guest = new FakeSocket()
+    hub.register(host)
+    hub.register(guest)
+
+    const created = await request(host, 'create-sea', 'room:create', {
+      clientId: 'sea-battle-host-123',
+      name: 'Host',
+      totalRounds: 1,
+      gameMode: 'seabattle',
+    })
+    const roomCode = created.payload.room.code
+    expect(created.payload.room.config.mode).toBe('seabattle')
+
+    await request(guest, 'join-sea', 'room:join', {
+      clientId: 'sea-battle-guest-456',
+      name: 'Guest',
+      roomCode,
+    })
+    await request(host, 'start-sea', 'match:start', { roomCode })
+
+    const fleet = [
+      { id: 'flagship', index: 0, orientation: 'h' },
+      { id: 'cruiser', index: 10, orientation: 'h' },
+      { id: 'frigate', index: 20, orientation: 'h' },
+      { id: 'corvette', index: 30, orientation: 'h' },
+      { id: 'skiff', index: 40, orientation: 'h' },
+    ]
+    const placed = await request(host, 'place-sea-host', 'fleet:place', { roomCode, ships: fleet })
+    expect(placed.payload.ok).toBe(true)
+    expect(placed.payload.room.seabattle.yourFleet).toHaveLength(5)
+
+    const guestStates = () =>
+      guest.sent.filter((message) => message.type === 'room:state' && message.payload.seabattle)
+    await eventually(() => guestStates().some((state) => state.payload.seabattle.ready.X))
+    expect(JSON.stringify(guestStates())).not.toContain('"cells"')
+
+    const bad = await request(guest, 'place-sea-bad', 'fleet:place', {
+      roomCode,
+      ships: fleet.slice(1),
+    })
+    expect(bad.payload).toMatchObject({ ok: false, error: 'Place all 5 ships.' })
+
+    await request(guest, 'place-sea-guest', 'fleet:place', { roomCode, ships: fleet })
+    const fired = await request(host, 'fire-sea', 'cell:play', { roomCode, index: 4 })
+    expect(fired.payload.room.seabattle.shots.O[4]).toBe('hit')
+    expect(fired.payload.room.turn).toBe('O')
+    expect(fired.payload.room.gameLog.at(-1).text).toBe('Host fired at A5: hit.')
+  })
+
   it('keeps pending Allegations votes private across broadcasts and reconnects', async () => {
     hub = createSocketHub({
       store: createMemoryRoomStore(),

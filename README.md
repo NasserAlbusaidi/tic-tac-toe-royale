@@ -53,6 +53,7 @@ It includes:
 | **Misère** | Making three in a row loses the round. |
 | **Ultimate** | Win small boards to claim the 3×3 meta grid. The cell you choose sends your opponent to the matching small board; if that board is closed, they may play anywhere. |
 | **Connect Four** | Drop discs into a 7-column board. The first player to connect four horizontally, vertically, or diagonally wins. |
+| **Sea Battle** | Each player secretly places five ships (sizes 5, 4, 3, 3, 2) on a 10×10 grid, then you take turns firing one shot each. Sunk ships are revealed; the first to sink the whole enemy fleet wins the round. |
 | **The Allegations** | Secretly accuse either suspect across 5, 7, or 9 curated cases. Matching votes award a charge; split verdicts create court chaos. The final record convicts one suspect, both, or nobody. |
 
 Ultimate moves use `board.cell` notation. For example, `5.3` means board 5,
@@ -76,6 +77,9 @@ flowchart LR
 - Allegations votes are projected per viewer: players see only their own locked
   target before reveal, spectators see neither target, and future prompts stay
   server-only.
+- Sea Battle fleets never leave the server mid-round: each player receives only
+  their own ships, everyone sees shots and sunk ships, and both fleets are
+  revealed when the round ends.
 - Production room state is shared through Redis and expires after six hours of
   inactivity.
 - Local development uses the same engine with an in-memory room store.

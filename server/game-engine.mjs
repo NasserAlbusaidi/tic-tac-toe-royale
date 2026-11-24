@@ -8,9 +8,24 @@ import {
   resetAllegationsMatch,
   startAllegationsMatch,
 } from './allegations-engine.mjs'
+import {
+  createSeaBattleState,
+  cellLabel,
+  fireShotInState,
+  placeFleetInState,
+  publicSeaBattleState,
+  seaBattleShotCount,
+} from './seabattle-engine.mjs'
 
 export const marks = ['X', 'O']
-export const gameModes = ['normal', 'misere', 'ultimate', 'connect4', 'allegations']
+export const gameModes = [
+  'normal',
+  'misere',
+  'ultimate',
+  'connect4',
+  'seabattle',
+  'allegations',
+]
 export const CONNECT_FOUR_ROWS = 6
 export const CONNECT_FOUR_COLUMNS = 7
 export const CHAT_MESSAGE_LIMIT = 280
@@ -279,6 +294,7 @@ export function createRoom({
     status: 'lobby',
     board: emptyBoardForMode(mode),
     ultimate: mode === 'ultimate' ? createUltimateState() : null,
+    seabattle: mode === 'seabattle' ? createSeaBattleState() : null,
     allegations:
       mode === 'allegations'
         ? createAllegationsState({
@@ -456,14 +472,28 @@ export function startMatch(room, socketId, { random = Math.random } = {}) {
     normalizeGameMode(room.config.mode) === 'ultimate'
       ? createUltimateState()
       : null
+  room.seabattle =
+    normalizeGameMode(room.config.mode) === 'seabattle'
+      ? createSeaBattleState()
+      : null
   room.turn = room.starter
   room.winner = null
   room.winningLine = []
   room.matchWinner = null
-  room.lastEvent = `Round ${room.currentRound} started`
-  appendGameLog(room, `Round ${room.currentRound} started.`)
+  announceRoundStart(room)
 
   return { ok: true }
+}
+
+function announceRoundStart(room) {
+  if (normalizeGameMode(room.config.mode) === 'seabattle') {
+    room.lastEvent = `Round ${room.currentRound}: place your fleets`
+    appendGameLog(room, `Round ${room.currentRound} started. Fleets are deploying in secret.`)
+    return
+  }
+
+  room.lastEvent = `Round ${room.currentRound} started`
+  appendGameLog(room, `Round ${room.currentRound} started.`)
 }
 
 function finishRound(room, winner, line, completedBy = winner) {
@@ -486,7 +516,9 @@ function finishRound(room, winner, line, completedBy = winner) {
     moves:
       normalizeGameMode(room.config.mode) === 'ultimate'
         ? room.ultimate.boards.flat().filter(Boolean).length
-        : room.board.filter(Boolean).length,
+        : normalizeGameMode(room.config.mode) === 'seabattle'
+          ? seaBattleShotCount(room.seabattle)
+          : room.board.filter(Boolean).length,
     endedAt: new Date().toISOString(),
   })
 
@@ -530,6 +562,10 @@ export function applyMove(room, socketId, index, boardIndex) {
 
   if (room.status !== 'playing') {
     return { ok: false, error: 'The board is not live.' }
+  }
+
+  if (mode === 'seabattle') {
+    return fireShot(room, socketId, cell)
   }
 
   const maximumMove = mode === 'connect4' ? CONNECT_FOUR_COLUMNS - 1 : 8
@@ -690,6 +726,90 @@ export function applyMove(room, socketId, index, boardIndex) {
   return { ok: true }
 }
 
+function fireShot(room, socketId, cell) {
+  const mark = playerMarkFor(room, socketId)
+
+  if (!mark) {
+    return { ok: false, error: 'Spectators cannot fire.' }
+  }
+
+  const state = room.seabattle
+
+  if (!state || state.phase !== 'firing') {
+    return { ok: false, error: 'Both fleets must be placed before firing.' }
+  }
+
+  if (room.turn !== mark) {
+    return { ok: false, error: 'Wait for your turn.' }
+  }
+
+  const shot = fireShotInState(state, mark, cell)
+
+  if (!shot.ok) {
+    return shot
+  }
+
+  const shooter = room.players[mark]?.name ?? mark
+  const target = mark === 'X' ? 'O' : 'X'
+  const targetName = room.players[target]?.name ?? target
+  const where = cellLabel(Number(cell))
+
+  if (shot.sunk) {
+    appendGameLog(room, `${shooter} fired at ${where} and sank ${targetName}'s ${shot.sunk.name}.`)
+  } else {
+    appendGameLog(room, `${shooter} fired at ${where}: ${shot.result}.`)
+  }
+
+  if (shot.fleetDestroyed) {
+    finishRound(room, mark, [], mark)
+    return { ok: true }
+  }
+
+  room.turn = target
+  room.lastEvent = shot.sunk
+    ? `${shooter} sank the ${shot.sunk.name}`
+    : `${shooter} ${shot.result === 'hit' ? 'hit' : 'missed'} at ${where}`
+
+  return { ok: true }
+}
+
+export function placeFleet(room, socketId, ships) {
+  if (normalizeGameMode(room.config.mode) !== 'seabattle') {
+    return { ok: false, error: 'This room is not a Sea Battle.' }
+  }
+
+  if (room.status !== 'playing') {
+    return { ok: false, error: 'The round is not live.' }
+  }
+
+  const mark = playerMarkFor(room, socketId)
+
+  if (!mark) {
+    return { ok: false, error: 'Spectators cannot place a fleet.' }
+  }
+
+  room.seabattle = room.seabattle ?? createSeaBattleState()
+  const result = placeFleetInState(room.seabattle, mark, ships)
+
+  if (!result.ok) {
+    return result
+  }
+
+  const name = room.players[mark]?.name ?? mark
+  appendGameLog(room, `${name} locked in a fleet.`)
+
+  if (result.bothReady) {
+    room.turn = room.starter
+    room.lastEvent = `Fleets deployed. ${room.players[room.turn]?.name ?? room.turn} fires first`
+    appendGameLog(room, 'Both fleets are at sea. Open fire.')
+  } else {
+    const waitingFor = mark === 'X' ? 'O' : 'X'
+    room.lastEvent = `Waiting for ${room.players[waitingFor]?.name ?? waitingFor} to deploy`
+  }
+
+  return { ok: true }
+}
+
 export function applyAllegationVote(room, socketId, target) {
   if (normalizeGameMode(room.config.mode) !== 'allegations') {
     return { ok: false, error: 'This room is not hearing allegations.' }
@@ -779,11 +899,14 @@ export function nextRound(room, socketId) {
     normalizeGameMode(room.config.mode) === 'ultimate'
       ? createUltimateState()
       : null
+  room.seabattle =
+    normalizeGameMode(room.config.mode) === 'seabattle'
+      ? createSeaBattleState()
+      : null
   room.winner = null
   room.winningLine = []
   room.status = 'playing'
-  room.lastEvent = `Round ${room.currentRound} started`
-  appendGameLog(room, `Round ${room.currentRound} started.`)
+  announceRoundStart(room)
 
   return { ok: true }
 }
@@ -804,6 +927,7 @@ export function resetMatch(room, socketId, totalRounds) {
     mode === 'ultimate'
       ? createUltimateState()
       : null
+  room.seabattle = mode === 'seabattle' ? createSeaBattleState() : null
   room.allegations =
     mode === 'allegations'
       ? resetAllegationsMatch(room.allegations ?? createAllegationsState())
@@ -892,6 +1016,13 @@ export function publicRoom(room, socketId) {
     ultimate:
       mode === 'ultimate'
         ? cloneUltimateState(room.ultimate ?? createUltimateState())
+        : null,
+    seabattle:
+      mode === 'seabattle'
+        ? publicSeaBattleState(room.seabattle, {
+            viewerMark: mark,
+            revealed: room.status === 'roundOver' || room.status === 'matchOver',
+          })
         : null,
     allegations:
       mode === 'allegations'

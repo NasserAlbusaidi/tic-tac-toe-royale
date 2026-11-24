@@ -9,6 +9,10 @@ export function markLabel(mark: Mark | null, mode?: GameMode) {
     return mark === 'X' ? 'Brass discs' : 'Aqua discs'
   }
 
+  if (mode === 'seabattle') {
+    return mark === 'X' ? 'Brass fleet' : 'Aqua fleet'
+  }
+
   if (mode === 'allegations') {
     return `Suspect ${mark}`
   }
@@ -29,6 +33,10 @@ export function modeLabel(mode: GameMode) {
     return 'Connect Four'
   }
 
+  if (mode === 'seabattle') {
+    return 'Sea Battle'
+  }
+
   if (mode === 'allegations') {
     return 'The Allegations'
   }
@@ -47,6 +55,10 @@ export function modeSummary(mode: GameMode) {
 
   if (mode === 'connect4') {
     return 'Connect Four · link four discs'
+  }
+
+  if (mode === 'seabattle') {
+    return 'Sea Battle · sink the hidden fleet'
   }
 
   if (mode === 'allegations') {

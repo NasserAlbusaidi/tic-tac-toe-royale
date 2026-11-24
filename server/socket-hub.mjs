@@ -12,6 +12,7 @@ import {
   createRoom,
   markDisconnected,
   nextRound,
+  placeFleet,
   publicRoom,
   resetMatch,
   startMatch,
@@ -342,6 +343,11 @@ export function createSocketHub({
         case 'cell:play':
           await mutateGameRoom(socket, session, payload, message.requestId, (room, clientId) =>
             applyMove(room, clientId, payload.index, payload.boardIndex),
+          )
+          break
+        case 'fleet:place':
+          await mutateGameRoom(socket, session, payload, message.requestId, (room, clientId) =>
+            placeFleet(room, clientId, payload.ships),
           )
           break
         case 'allegation:vote':
