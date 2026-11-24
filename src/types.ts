@@ -1,5 +1,11 @@
 export type Mark = 'X' | 'O'
-export type GameMode = 'normal' | 'misere' | 'ultimate' | 'connect4' | 'allegations'
+export type GameMode =
+  | 'normal'
+  | 'misere'
+  | 'ultimate'
+  | 'connect4'
+  | 'seabattle'
+  | 'allegations'
 export type Winner = Mark | 'draw' | null
 export type RoomStatus = 'lobby' | 'playing' | 'roundOver' | 'matchOver'
 
@@ -9,6 +15,44 @@ export type UltimateState = {
   boards: (Mark | null)[][]
   claims: UltimateClaim[]
   targetBoard: number | null
+}
+
+export type ShipOrientation = 'h' | 'v'
+export type ShotResult = 'hit' | 'miss'
+
+export type FleetSpecShip = {
+  id: string
+  name: string
+  size: number
+}
+
+export type PublicShip = FleetSpecShip & {
+  orientation: ShipOrientation
+  cells: number[]
+}
+
+export type ShipPlacement = {
+  id: string
+  index: number
+  orientation: ShipOrientation
+}
+
+export type PublicSeaBattleState = {
+  phase: 'placing' | 'firing'
+  size: number
+  fleetSpec: FleetSpecShip[]
+  ready: Record<Mark, boolean>
+  /** Shots received by each side's waters. */
+  shots: Record<Mark, (ShotResult | null)[]>
+  sunk: Record<Mark, PublicShip[]>
+  yourFleet: PublicShip[] | null
+  revealedFleets: Record<Mark, PublicShip[] | null> | null
+  lastShot: {
+    by: Mark
+    index: number
+    result: ShotResult
+    sunk: string | null
+  } | null
 }
 
 export type AllegationsPack = 'general' | 'sensei' | 'mixed'
@@ -96,6 +140,7 @@ export type RoomState = {
   status: RoomStatus
   board: (Mark | null)[]
   ultimate: UltimateState | null
+  seabattle: PublicSeaBattleState | null
   allegations: PublicAllegationsState | null
   turn: Mark
   starter: Mark
